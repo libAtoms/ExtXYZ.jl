@@ -1,6 +1,8 @@
 module ExtXYZ
 
+using extxyz_jll
 using LinearAlgebra
+using JuLIP
 
 cfopen(filename::String, mode::String) = ccall(:fopen, 
                                                 Ptr{Cvoid},
@@ -43,28 +45,30 @@ struct DictEntry
     n_in_row::Cint
 end
 
-extxyz_dylib = abspath(joinpath(@__DIR__, "../extxyz/_extxyz.so"))
+const _kv_grammar = Ref{Ptr{Cvoid}}(0)
 
-_kv_grammar = ccall((:compile_extxyz_kv_grammar, extxyz_dylib),
-                    Ptr{Cvoid},
-                    ())
+function __init__()
+    _kv_grammar[] = ccall((:compile_extxyz_kv_grammar, libextxyz),
+                           Ptr{Cvoid}, ())
+    nothing
+end
 
-cfree_dict(dict::Ptr{Cvoid}) = ccall((:free_dict, extxyz_dylib),
+cfree_dict(dict::Ptr{Cvoid}) = ccall((:free_dict, libextxyz),
                                         Cvoid,
                                         (Ptr{Cvoid},),
                                         dict)
 
-cprint_dict(dict::Ptr{Cvoid}) = ccall((:print_dict, extxyz_dylib),
+cprint_dict(dict::Ptr{Cvoid}) = ccall((:print_dict, libextxyz),
                                         Cvoid,
                                         (Ptr{Cvoid},),
                                         dict)
 
 
 function cextxyz_read_ll(fp::Ptr{Cvoid}, nat::Ref{Cint}, info::Ref{Ptr{Cvoid}}, arrays::Ref{Ptr{Cvoid}})
-    return ccall((:extxyz_read_ll, extxyz_dylib),
+    return ccall((:extxyz_read_ll, libextxyz),
                     Cint,
                     (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{Cvoid}}, Ptr{Ptr{Cvoid}}),
-                    _kv_grammar, fp, nat, info, arrays)
+                    _kv_grammar[], fp, nat, info, arrays)
 end
 
 const DATA_I = 1
@@ -276,17 +280,3 @@ read_extxyz(file::Union{String,IOStream}; kwargs...) = read_extxyz(file, Iterato
 export read_extxyz
  
 end
-
-
-filename = "test.xyz"
-
-seq1 = ExtXYZ.read_extxyz(filename)
-seq2 = ExtXYZ.read_extxyz(filename, 4:10)
-frame = ExtXYZ.read_extxyz(filename, 4)
-
-f = open(filename, "r")
-seq3 = ExtXYZ.read_extxyz(f)
-close(f)
-
-@assert all(seq1[4:10] .== seq2)
-@assert all(seq1 .== seq3)
