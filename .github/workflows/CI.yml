@@ -25,7 +25,7 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - name: Add MolSim registry
-        run: julia -e 'using Pkg; pkg"registry add https://github.com/JuliaMolSim/MolSim.git"
+        run: julia -e 'using Pkg; pkg"registry add https://github.com/JuliaMolSim/MolSim.git"'
       - uses: actions/cache@v1
         env:
           cache-name: cache-artifacts
