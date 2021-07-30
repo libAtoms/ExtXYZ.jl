@@ -20,6 +20,9 @@ jobs:
           - x64
     steps:
       - uses: actions/checkout@v2
+      - uses: julia-actions/add-julia-registry@v1
+        with:
+          registry: https://github.com/JuliaMolSim/MolSim.git      
       - uses: julia-actions/setup-julia@v1
         with:
           version: ${{ matrix.version }}
