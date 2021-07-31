@@ -9,6 +9,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 extxyz_jll = "6ecdc6fc-93a8-5528-aee3-ac7ae1c60be7"
 
 [compat]
+JuLIP = "0.8"
 julia = "1"
 
 [extras]
