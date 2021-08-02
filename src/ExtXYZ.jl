@@ -2,7 +2,6 @@ module ExtXYZ
 
 using extxyz_jll
 using LinearAlgebra
-using JuLIP
 
 cfopen(filename::String, mode::String) = ccall(:fopen, 
                                                 Ptr{Cvoid},
@@ -191,42 +190,8 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
         rethrow()
     end
 
-    dict = Dict{String, Any}("__id__" => "JuLIP_Atoms")
-
-    "pos" in keys(arrays) || error("arrays dictionary missing 'pos' entry containing positions")
-    dict["X"] = vecs(pop!(arrays, "pos"))
-    @assert length(dict["X"]) == nat
-
-    # atomic numbers and symbols
-    dict["Z"] = "Z" in keys(arrays) ? pop!(arrays, "Z") : nothing
-    if "species" in keys(arrays)
-        species = pop!(arrays, "species")
-        Zsp = atomic_number.([Symbol(sp) for sp in species])
-        if dict["Z"] !== nothing
-            all(dict["Z"] .== Zsp) || error("inconsistent 'Z' and 'species' properties")
-        else
-            dict["Z"] = Zsp
-        end
-    end
-    dict["Z"] === nothing && error("atomic numbers not defined - either 'Z' or 'species' must be present")
-
-    # mass - lookup from atomic number if not present
-    if "masses" in keys(arrays)
-        dict["M"] = pop!(arrays, "masses")
-    elseif "mass" in keys(arrays)
-        dict["M"] = pop!(arrays, "mass") # FIXME convert units?
-    else
-        dict["M"] = [atomic_mass(z) for z in AtomicNumber.(dict["Z"])]
-    end
-
-    # momenta / velocities
-    if "momenta" in keys(arrays)
-        dict["P"] = vecs(pop!(arrays, "momenta"))
-    elseif "velo" in keys(arrays)
-        dict["P"] = vecs(pop!(arrays, "velo") .* dict["M"]) # FIXME convert units?
-    else
-        dict["P"] = zeros((3, nat))
-    end
+    dict = Dict{String, Any}()
+    dict["N_atoms"] = nat # number of atoms
 
     # periodic boundary conditions
     if "pbc" in keys(info)
@@ -237,8 +202,9 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
     lattice = extract_lattice!(info)
     dict["cell"] = transpose(lattice)
 
-    # everything else goes in data
-    dict["data"] = merge(info, arrays)
+    # everything else stays in info and arrays
+    dict["info"] = info
+    dict["arrays"] = arrays
 
     return dict
 end
@@ -246,7 +212,7 @@ end
 """
 Channel to yield a sequence of frames from an open file pointer
 """
-function iread_extxyz(fp::Ptr{Cvoid}, range; kwargs...)
+function iread_frames(fp::Ptr{Cvoid}, range; kwargs...)
     Channel() do channel
         for frame in 1:first(range)-1
             atoms = read_frame(fp, kwargs...)
@@ -263,20 +229,23 @@ end
 """
 Read frames from a ExtXYZ file, specified by a file pointer, filename or IOStream
 """
-function read_extxyz(fp::Ptr{Cvoid}, range; kwargs...)
-    seq = collect(iread_extxyz(fp, range; kwargs...))
-    return length(seq) == 1 ? seq[1] : seq
-end
+read_frames(fp::Ptr{Cvoid}, range; kwargs...) = collect(iread_frames(fp, range; kwargs...))
 
-function read_extxyz(file::Union{String,IOStream}, range; kwargs...)
+function read_frames(file::Union{String,IOStream}, range; kwargs...)
     cfopen(file) do fp
-        read_extxyz(fp, range; kwargs...)
+        fp == C_NULL && error("file $file cannot be opened for reading")
+        read_frames(fp, range; kwargs...)
     end
 end
 
-read_extxyz(file::Union{String,IOStream}, count::Int; kwargs...) = read_extxyz(file, 1:count)
-read_extxyz(file::Union{String,IOStream}; kwargs...) = read_extxyz(file, Iterators.countfrom(1))
+read_frames(file::Union{String,IOStream}, count::Int; kwargs...) = read_frames(file, 1:count; kwargs...)
+read_frames(file::Union{String,IOStream}; kwargs...) = read_frames(file, Iterators.countfrom(1); kwargs...)
 
-export read_extxyz
+"""
+Read a single frame from an ExtXYZ file
+"""
+read_frame(file::Union{String,IOStream}, args...; kwargs...) = read_frames(file, args...; kwargs...)[1]
+
+export read_frame, read_frames, iread_frames
  
 end
