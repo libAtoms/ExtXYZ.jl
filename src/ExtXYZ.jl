@@ -1,7 +1,6 @@
 module ExtXYZ
 
 using extxyz_jll
-using LinearAlgebra
 
 cfopen(filename::String, mode::String) = ccall(:fopen, 
                                                 Ptr{Cvoid},
@@ -52,23 +51,16 @@ function __init__()
     nothing
 end
 
-cfree_dict(dict::Ptr{Cvoid}) = ccall((:free_dict, libextxyz),
+cfree_dict(dict::Ptr{DictEntry}) = ccall((:free_dict, libextxyz),
                                         Cvoid,
-                                        (Ptr{Cvoid},),
+                                        (Ptr{DictEntry},),
                                         dict)
 
-cprint_dict(dict::Ptr{Cvoid}) = ccall((:print_dict, libextxyz),
+cprint_dict(dict::Ptr{DictEntry}) = ccall((:print_dict, libextxyz),
                                         Cvoid,
-                                        (Ptr{Cvoid},),
+                                        (Ptr{DictEntry},),
                                         dict)
 
-
-function cextxyz_read_ll(fp::Ptr{Cvoid}, nat::Ref{Cint}, info::Ref{Ptr{Cvoid}}, arrays::Ref{Ptr{Cvoid}})
-    return ccall((:extxyz_read_ll, libextxyz),
-                    Cint,
-                    (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{Cvoid}}, Ptr{Ptr{Cvoid}}),
-                    _kv_grammar[], fp, nat, info, arrays)
-end
 
 const DATA_I = 1
 const DATA_F = 2
@@ -82,7 +74,7 @@ const TYPE_MAP = Dict(DATA_I => Cint,
 
 import Base: convert
 
-function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry}; transpose=false)
+function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry})
     result = Dict{String,Any}()
     node_ptr = c_dict
     while node_ptr != C_NULL
@@ -115,13 +107,13 @@ function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry}; transpose=fal
             if node.data_t == DATA_S
                 value = unsafe_string.(value)
             elseif node.data_t == DATA_B
-                value = collect(!=(0).(value))
+                value = convert(Array{Bool}, value)
             else
                 value = copy(value)
             end
 
-            if node.nrows != 0 && node.ncols != 0 && transpose
-                value = value'
+            if node.nrows != 0 && node.ncols != 0
+                value = permutedims(value, ndims(value):-1:1)
             end
         end
 
@@ -132,16 +124,25 @@ function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry}; transpose=fal
     return result
 end
 
+# utility functions for converting from Julia types to corresponding C type and value
+
 Ctype(::Type{S}) where S <: AbstractArray{T,N} where {T,N} = Ctype(T)
-Ctype(::Type{Int}) = (Cint, DATA_I)
+Ctype(::Type{<:Integer}) = (Cint, DATA_I)
 Ctype(::Type{Bool}) = (Cint, DATA_B)
-Ctype(::Type{Float64}) = (Cdouble, DATA_F)
+Ctype(::Type{<:Real}) = (Cdouble, DATA_F)
 Ctype(::Type{String}) = (Cstring, DATA_S)
 
-Cvalue(value::T) where {T<:Union{Int,Bool,AbstractFloat}} = convert(Ctype(T)[1], value)
-Cvalue(value::String) = Base.unsafe_convert(Cstring, Base.cconvert(Cstring, value))
+Cvalue(value::T) where {T<:Union{Integer,Bool,Real}} = convert(Ctype(T)[1], value)
 
-function Cvalue(value::Array{T,N}) where {T<:Union{Int,Bool,AbstractFloat},N}
+function Cvalue(value::String) 
+    ptr = pointer(Base.unsafe_convert(Cstring, Base.cconvert(Cstring, value)))
+    new = Ptr{Cchar}(Libc.malloc(sizeof(value)+1))
+    unsafe_copyto!(new, ptr, sizeof(value))
+    unsafe_store!(new, C_NULL, sizeof(value)+1)
+    return new
+end
+
+function Cvalue(value::Array{T,N}) where {T<:Union{Integer,Bool,Real},N}
     convert(Array{Ctype(T)[1]}, permutedims(value, ndims(value):-1:1))
 end
 
@@ -151,50 +152,53 @@ function Cvalue(value::Array{String,1})
     return result
 end
 
+# dims(value) -> (nrows, ncols) for scalar, vector and matrix value
 dims(value) = (0, 0)
-dims(value::AbstractArray{T,1}) where T = (0, size(value, 1))
-dims(value::AbstractArray{T,2}) where T = (size(value, 1), size(value, 2))
+dims(value::AbstractVector) = (0, size(value, 1))
+dims(value::AbstractMatrix) = (size(value, 1), size(value, 2))
 
-function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any})
+function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=nothing)
     c_dict_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry)))
     node_ptr = c_dict_ptr
 
-    for (idx, key) in enumerate(keys(dict))
+    ordered_keys === nothing && (ordered_keys = keys(dict))
+    for (idx, key) in enumerate(ordered_keys)
         value = dict[key]
-        key = Cvalue(key)
-        nrow, ncol = dims(value)
+        ckey = Cvalue(key)
         cvalue = Cvalue(value)
+        nrow, ncol = dims(cvalue)
         type, data_t = Ctype(typeof(value))
         data = Ptr{type}(Libc.malloc(sizeof(cvalue)))
         if nrow == 0 && ncol == 0
             unsafe_store!(data, cvalue)
         else
-            unsafe_copyto!(data, pointer(cvalue), 1)
+            ptr = pointer(cvalue)
+            data_t == DATA_S && (ptr = reinterpret(Ptr{type}, ptr)) # char** -> char*
+            unsafe_copyto!(data, ptr, length(cvalue))
         end
 
         # allocate another DictEntry struct unless we're on the last one already
-        if idx != length(dict)
-            next_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry)))
-        else
-            next_ptr = C_NULL
-        end
+        next_ptr = C_NULL
+        idx != length(dict) && (next_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry))))
 
-        # in place mutation of node_ptr
-        node = DictEntry(key, data, data_t, nrow, ncol, 
+        node = DictEntry(ckey, data, data_t, nrow, ncol, 
                          next_ptr, C_NULL, C_NULL, 0)
-        unsafe_store!(node_ptr, node)
+        unsafe_store!(node_ptr, node) # in place mutation of node_ptr
         node_ptr = next_ptr
     end
     return c_dict_ptr
 end
 
-function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, transpose_arrays=false)
+function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false)
     nat = Ref{Cint}(0)
-    info = Ref{Ptr{Cvoid}}()
-    arrays = Ref{Ptr{Cvoid}}()
+    info = Ref{Ptr{DictEntry}}()
+    arrays = Ref{Ptr{DictEntry}}()
     eof = false
     try
-        if cextxyz_read_ll(fp, nat, info, arrays) == 0
+        res =  ccall((:extxyz_read_ll, libextxyz),
+                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}),
+                      _kv_grammar[], fp, nat, info, arrays)
+        if res != 1
             eof = true
             throw(EOFError())
         end
@@ -207,7 +211,7 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, transpose_arrays=false)
         pinfo = reinterpret(Ptr{DictEntry}, info[])
         parrays = reinterpret(Ptr{DictEntry}, arrays[])
         jinfo = convert(Dict{String,Any}, pinfo)
-        jarrays = convert(Dict{String,Any}, parrays, transpose=transpose_arrays)
+        jarrays = convert(Dict{String,Any}, parrays)
         return nat[], jinfo, jarrays
 
     finally
@@ -239,7 +243,7 @@ end
 
 function read_frame(fp::Ptr{Cvoid}; verbose=false)
     nat, info, arrays = try
-        read_frame_dicts(fp; verbose=verbose, transpose_arrays=true)
+        read_frame_dicts(fp; verbose=verbose)
     catch err
         if isa(err, EOFError) 
             return nothing
@@ -257,7 +261,9 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
 
     # cell is transpose of the stored lattice
     lattice = extract_lattice!(info)
-    dict["cell"] = transpose(lattice)
+    dict["cell"] = permutedims(lattice, (2,1))
+
+    delete!(info, "Properties")
 
     # everything else stays in info and arrays
     dict["info"] = info
@@ -272,11 +278,11 @@ Channel to yield a sequence of frames from an open file pointer
 function iread_frames(fp::Ptr{Cvoid}, range; kwargs...)
     Channel() do channel
         for frame in 1:first(range)-1
-            atoms = read_frame(fp, kwargs...)
+            atoms = read_frame(fp; kwargs...)
             atoms === nothing && break
         end
         for frame in range
-            atoms = read_frame(fp, kwargs...)
+            atoms = read_frame(fp; kwargs...)
             atoms === nothing && break
             put!(channel, atoms)
         end
@@ -304,6 +310,57 @@ Read a single frame from an ExtXYZ file
 read_frame(file::Union{String,IOStream}, index; kwargs...) = read_frames(file, index; kwargs...)[1]
 read_frame(file::Union{String,IOStream}; kwargs...) = read_frame(file, 1; kwargs...)
 
-export read_frame, read_frames, iread_frames
+function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
+    nat = Cint(nat)
+    cinfo = convert(Ptr{DictEntry}, info)
+
+    # ensure "species" goes in column 1 and "pos" goes in column 2
+    ordered_keys = collect(keys(arrays))
+    perm = collect(1:length(ordered_keys))
+    species_idx = findfirst(isequal("species"), ordered_keys)
+    pos_idx = findfirst(isequal("pos"), ordered_keys)
+    perm[1], perm[species_idx] = perm[species_idx], perm[1]
+    perm[2], perm[pos_idx] = perm[pos_idx], perm[2]
+    permute!(ordered_keys, perm)
+    carrays = convert(Ptr{DictEntry}, arrays; ordered_keys=ordered_keys)
+
+    if verbose
+        cprint_dict(cinfo)
+        cprint_dict(carrays)
+    end
+    try
+        res = ccall((:extxyz_write_ll, libextxyz),
+                     Cint, (Ptr{Cvoid}, Cint, Ptr{DictEntry}, Ptr{DictEntry}), fp, nat, cinfo, carrays)
+        res != 0 && error("error writing to file")
+    finally
+        cfree_dict(cinfo)
+        cfree_dict(carrays)
+    end
+end
+
+function write_frame(fp::Ptr{Cvoid}, dict; verbose=false)
+    nat = dict["N_atoms"]
+    info = copy(dict["info"])
+    info["Lattice"] = permutedims(dict["cell"], (2, 1))
+    info["pbc"] = get(dict, "pbc", [true, true, true])
+
+    write_frame_dicts(fp, nat, info, dict["arrays"]; verbose=verbose)
+end
+
+write_frames(fp::Ptr{Cvoid}, dicts; kwargs...) = write_frame.(dicts)
+
+function write_frames(file::Union{String,IOStream}, dicts; append=false, kwargs...)
+    mode = append ? "a" : "w"
+    cfopen(file, mode) do fp
+        fp == C_NULL && error("file $file cannot be opened for writing")
+        for dict in dicts
+            write_frame(fp, dict; kwargs...)
+        end
+    end
+end
+
+write_frame(file::Union{String,IOStream}, dict; kwargs...) = write_frames(file, [dict]; kwargs...)
+
+export read_frame, read_frames, iread_frames, write_frame, write_frames
  
 end

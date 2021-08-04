@@ -1,32 +1,89 @@
 using ExtXYZ
 using Test
 
-@testset "ExtXYZ.jl" begin
-    @testset "read_extxyz" begin
-        filename = "data/test.xyz"
+"""
+Check two dictionaries `seq1` and `seq2` are approximately equal
 
-        seq1 = read_frames(filename)
-        seq2 = read_frames(filename, 4:10)
-        @test all(seq1[4:10] .== seq2)
-
-        frame4 = read_frame(filename, 4)
-        @test frame4 == seq1[4]
-
-        frame1 = read_frame(filename)
-        @test frame1 == seq1[1]
-        
-        f = open(filename, "r")
-        seq3 = read_frames(f)
-        close(f)
-        
-        @test all(seq1 .== seq3)    
-    end
-
-    @testset "convert" begin
-        filename = "data/test.xyz"
-        nat, info, arrays = ExtXYZ.cfopen(filename, "r") do fp
-            ExtXYZ.read_frame_dicts(fp)
+Returns true if all keys match, all non-float values match, and all pairs 
+of float values `(v1, v2)` satisfy `isapprox(v1, v2)`
+"""
+function Base.isapprox(seq1::AbstractDict, seq2::AbstractDict)
+    for (k1,v1) in seq1
+        k1 ∈ keys(seq2) || return false
+        if v1 isa AbstractDict
+            return isapprox(v1, seq2[k1])
+        elseif v1 isa Array{AbstractFloat} || v1 isa AbstractFloat
+            v1 ≈ seq2[k1]  || return false
+        else
+            v1 == seq2[k1] || return false
         end
-        # cinfo, values = convert(Ptr{ExtXYZ.DictEntry}, info)
+    end
+    return true
+end
+
+@testset "ExtXYZ.jl" begin
+    test_xyz(frame) = """1
+cutoff=5.50000000 pbc=[T, T, T] nneightol=1.20000000 config_type=isolated_atom virial=[[$frame.00000000, 1.00000000, 2.00000000], [3.00000000, 4.00000000, 5.00000000], [6.00000000, 7.00000000, 8.00000000]] dft_energy=-158.$(frame)4496821 Lattice="1.00000000 2.00000000 3.00000000 4.00000000 5.00000000 6.00000000 7.00000000 $(frame).00000000 9.00000000" gap_energy=-157.72725320  Properties=species:S:1:pos:R:3:n_neighb:I:1:dft_force:R:3:gap_force:R:3:map_shift:I:3
+Si        10.00000000      11.00000000      $frame.00000000          0         0.10000000       0.20000000       0.30000000         0.1$(frame)000000       0.22000000       0.330000000         -1       -2       0
+"""
+
+    infile = "test.xyz"
+    open(infile, "w") do io
+        for frame=1:10
+            print(io, test_xyz(frame))
+        end
+    end
+    outfile = "dump.xyz"
+
+    try
+        @testset "read_extxyz" begin
+            seq1 = read_frames(infile)
+
+            @test all([s["cell"][3,2] for s in seq1] .== 1.0:10.0)
+            @test all([s["arrays"]["pos"][3,1] for s in seq1] .== 1.0:10.0)
+            @test all([s["info"]["virial"][1,1] for s in seq1] .== 1.0:10.0)
+            @test all([s["info"]["dft_energy"] for s in seq1] .== [parse(Float64, "-158.$(frame)4496821") for frame=1:10])
+            @test all([s["arrays"]["gap_force"][1,1] for s in seq1] .== [parse(Float64, "0.1$(frame)") for frame=1:10])
+
+            seq2 = read_frames(infile, 4:10)
+            @test all(seq1[4:10] .== seq2)
+
+            frame4 = read_frame(infile, 4)
+            @test frame4 == seq1[4]
+
+            frame1 = read_frame(infile)
+            @test frame1 == seq1[1]
+            
+            f = open(infile, "r")
+            seq3 = read_frames(f)
+            close(f)
+            
+            @test all(seq1 .== seq3)
+        end
+
+        @testset "convert" begin
+            nat, info, arrays = ExtXYZ.cfopen(infile, "r") do fp
+                ExtXYZ.read_frame_dicts(fp)
+            end
+            cinfo = convert(Ptr{ExtXYZ.DictEntry}, info)
+            carrays = convert(Ptr{ExtXYZ.DictEntry}, arrays)
+
+            ninfo = convert(Dict{String,Any}, cinfo)
+            narrays = convert(Dict{String,Any}, carrays)
+
+            @test ninfo == info
+            @test narrays == arrays
+        end
+
+        @testset "write" begin
+            seq1 = read_frames(infile)
+            write_frames(outfile, seq1)
+            seq2 = read_frames(outfile)
+            @test all(seq1 .≈ seq2) # use custom isapprox(), since expect some loss of precision on round-trip
+        end
+
+    finally
+        rm(infile, force=true)
+        rm(outfile, force=true)
     end
 end
