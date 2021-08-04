@@ -42,7 +42,7 @@ write_frames("output.xyz", frames, append=true) # append four frames to output
 
 The function `iread_frames()` provides lazy file-reading using a `Channel`:
 
-```
+```julia
 for frame in iread_frames("input.xyz")
     process(frame) # do something with each frame
 do
