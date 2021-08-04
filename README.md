@@ -24,11 +24,13 @@ The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional -
 
 Four main functions are exported: `read_frame()` and `write_frame()` for reading and writing single configurations (snapshots), respectively, and `read_frames()` and `write_frames()` for reading and writing trajectories.
 
+All functions can work with string filenames, an open `Base.IO` instance or (intended primarily for internal use) a C `FILE*` pointer, stored as a `Ptr{Cvoid}` type.
+
 ```julia
 using ExtXYZ
 
 frame = read_frame("input.xyz")  # single atomic configuration, represented as a Dict{String}{Any}
-write_frame("output.xyz", frame) # write a single frame to `output.xyz`
+write_frame("output.xyz", frame) # write a single frame to `output.xyz`. 
 
 frame10 = read_frame("input.xyz", 10) # read a specific frame, counting from 1 for first frame in file
 
@@ -135,7 +137,7 @@ The interal representation, shown in JSON format for readability, is as follows:
 }
 ```
 
-Important top-level keys include:
+Important dictionary keys include:
 
  - `N_atoms` - the number of atoms (mandatory)
  - `cell` - the unit cell, a 3x3 matrix of floats containing the cell vectors as row, i.e. the same as [ASE](https://wiki.fysik.dtu.dk/ase/ase/cell.html#ase.cell.Cell) (mandatory)
