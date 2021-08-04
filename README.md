@@ -34,13 +34,23 @@ write_frame("output.xyz", frame) # write a single frame to `output.xyz`.
 
 frame10 = read_frame("input.xyz", 10) # read a specific frame, counting from 1 for first frame in file
 
-all_frames = read_frames("seq.xyz")  # read all frames
+all_frames = read_frames("seq.xyz")  # read all frames, returns Vector{Dict{String}{Any}}
 frames = read_frames("seq.xyz", 1:4) # specific range of frames
+
+write_frames("output.xyz", frames, append=true) # append four frames to output
+```
+
+The function `iread_frames()` provides lazy file-reading using a `Channel`:
+
+```
+for frame in iread_frames("input.xyz")
+    process(frame) # do something with each frame
+do
 ```
 
 ## Atoms data structure
 
-In lieu of a package-independent data structure for representing atomic structures (i.e. an equivalent to ASE's `Atoms` class in the Python ecosystem), this package uses a `Dict{String}{Any}`. For an extended XYZ as follows
+In lieu of a package-independent data structure for representing atomic structures (i.e. an equivalent to ASE's `Atoms` class in the Python ecosystem), this package uses a `Dict{String}{Any}`. For the extended XYZ file:
 
 ```
 8
@@ -145,4 +155,4 @@ Important dictionary keys include:
  - `info` - dictionary containing per-configuration key/value pairs parsed from the comment (line #2 in each frame). These can include scalars, vectors and matrices of integer, real, bool and string scalars or vectors. (mandatory, can be empty)
  - `arrays` - dictionary containing per-atom properties as a `N_component x `N_atoms` matrix, reduced to a vector for the case `N_component = 1`. These represent scalar (`N_component = 1`) or vector (`N_component > 1`) per-atom properties, of integer (`I`), real (`R`), bool, (`L`) or string (`S`, scalars only) type. The set of properties is extracted from the special `Properties` key in the comment line. (mandatory, and must contain at least a string property `"species"` containing atomic symbols and a 3-column vector property
 
-`JuLIP.XYZ.read_extxyz()` and `JuLIP.XYZ.write_extxyz()` contain functionality to convert these dictionaries to/from `JuLIP.Atoms` type instances.
+`JuLIP.XYZ.read_extxyz()` and `JuLIP.XYZ.write_extxyz()` contain functionality to convert these dictionaries to/from `JuLIP.Atoms` instances.
