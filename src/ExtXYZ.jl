@@ -13,9 +13,9 @@ cfclose(fp::Ptr{Cvoid}) = ccall(:fclose,
                                 (Ptr{Cvoid},),
                                 fp)
 
-function cfopen(f::Function, iostream::IOStream)
+function cfopen(f::Function, iostream::IOStream, mode::String="r")
     newfd = Libc.dup(RawFD(fd(iostream)))
-    fp = ccall(:fdopen, Ptr{Cvoid}, (Cint, Cstring), newfd, "r")
+    fp = ccall(:fdopen, Ptr{Cvoid}, (Cint, Cstring), newfd, mode)
     try
         f(fp)
     finally
@@ -23,8 +23,8 @@ function cfopen(f::Function, iostream::IOStream)
     end
 end
 
-function cfopen(f::Function, filename::String)
-    fp = cfopen(filename, "r")
+function cfopen(f::Function, filename::String, mode::String="r")
+    fp = cfopen(filename, mode)
     try
         f(fp)
     finally
@@ -75,17 +75,19 @@ const DATA_F = 2
 const DATA_B = 3
 const DATA_S = 4
 
-const TYPE_MAP = Dict(DATA_I => Ptr{Cint},
-                      DATA_F => Ptr{Cdouble},
-                      DATA_B => Ptr{Cint},
-                      DATA_S => Ptr{Cstring})
+const TYPE_MAP = Dict(DATA_I => Cint,
+                      DATA_F => Cdouble,
+                      DATA_B => Cint,
+                      DATA_S => Cstring)
 
-function c_to_julia_dict(c_dict::Ptr{DictEntry}; transpose=false)
-    result = Dict{String, Any}()
+import Base: convert
+
+function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry}; transpose=false)
+    result = Dict{String,Any}()
     node_ptr = c_dict
     while node_ptr != C_NULL
         node = unsafe_load(node_ptr)
-        data_ptr = reinterpret(TYPE_MAP[node.data_t], node.data)
+        data_ptr = reinterpret(Ptr{TYPE_MAP[node.data_t]}, node.data)
 
         if node.nrows == 0 && node.ncols == 0
             # scalar
@@ -107,13 +109,13 @@ function c_to_julia_dict(c_dict::Ptr{DictEntry}; transpose=false)
             end
 
             value = unsafe_wrap(Array, 
-                                reinterpret(TYPE_MAP[node.data_t], node.data), 
+                                reinterpret(Ptr{TYPE_MAP[node.data_t]}, node.data), 
                                 dims)
 
             if node.data_t == DATA_S
                 value = unsafe_string.(value)
             elseif node.data_t == DATA_B
-                value = !=(0).(value)
+                value = collect(!=(0).(value))
             else
                 value = copy(value)
             end
@@ -128,8 +130,63 @@ function c_to_julia_dict(c_dict::Ptr{DictEntry}; transpose=false)
         node_ptr = node.next
     end
     return result
-end     
+end
 
+Ctype(::Type{S}) where S <: AbstractArray{T,N} where {T,N} = Ctype(T)
+Ctype(::Type{Int}) = (Cint, DATA_I)
+Ctype(::Type{Bool}) = (Cint, DATA_B)
+Ctype(::Type{Float64}) = (Cdouble, DATA_F)
+Ctype(::Type{String}) = (Cstring, DATA_S)
+
+Cvalue(value::T) where {T<:Union{Int,Bool,AbstractFloat}} = convert(Ctype(T)[1], value)
+Cvalue(value::String) = Base.unsafe_convert(Cstring, Base.cconvert(Cstring, value))
+
+function Cvalue(value::Array{T,N}) where {T<:Union{Int,Bool,AbstractFloat},N}
+    convert(Array{Ctype(T)[1]}, permutedims(value, ndims(value):-1:1))
+end
+
+function Cvalue(value::Array{String,1})
+    result = Array{Ptr{Cchar}}(undef, length(value))
+    result .= Cvalue.(value)
+    return result
+end
+
+dims(value) = (0, 0)
+dims(value::AbstractArray{T,1}) where T = (0, size(value, 1))
+dims(value::AbstractArray{T,2}) where T = (size(value, 1), size(value, 2))
+
+function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any})
+    c_dict_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry)))
+    node_ptr = c_dict_ptr
+
+    for (idx, key) in enumerate(keys(dict))
+        value = dict[key]
+        key = Cvalue(key)
+        nrow, ncol = dims(value)
+        cvalue = Cvalue(value)
+        type, data_t = Ctype(typeof(value))
+        data = Ptr{type}(Libc.malloc(sizeof(cvalue)))
+        if nrow == 0 && ncol == 0
+            unsafe_store!(data, cvalue)
+        else
+            unsafe_copyto!(data, pointer(cvalue), 1)
+        end
+
+        # allocate another DictEntry struct unless we're on the last one already
+        if idx != length(dict)
+            next_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry)))
+        else
+            next_ptr = C_NULL
+        end
+
+        # in place mutation of node_ptr
+        node = DictEntry(key, data, data_t, nrow, ncol, 
+                         next_ptr, C_NULL, C_NULL, 0)
+        unsafe_store!(node_ptr, node)
+        node_ptr = next_ptr
+    end
+    return c_dict_ptr
+end
 
 function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, transpose_arrays=false)
     nat = Ref{Cint}(0)
@@ -149,8 +206,8 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, transpose_arrays=false)
 
         pinfo = reinterpret(Ptr{DictEntry}, info[])
         parrays = reinterpret(Ptr{DictEntry}, arrays[])
-        jinfo = c_to_julia_dict(pinfo)
-        jarrays = c_to_julia_dict(parrays, transpose=transpose_arrays)
+        jinfo = convert(Dict{String,Any}, pinfo)
+        jarrays = convert(Dict{String,Any}, parrays, transpose=transpose_arrays)
         return nat[], jinfo, jarrays
 
     finally
@@ -172,7 +229,7 @@ function extract_lattice!(result_dict)
     elseif size(lattice) == (3,)
         lattice = convert(Array{Float64}, diagm(lattice))
     elseif lattice.shape == (9,)
-        lattice = convert(Array{Float64}, reshape(lattice, (3, 3), order='F'))
+        lattice = convert(Array{Float64}, reshape(lattice, 3, 3))
     else
         error("Lattice has wrong shape!")
     end
@@ -238,13 +295,14 @@ function read_frames(file::Union{String,IOStream}, range; kwargs...)
     end
 end
 
-read_frames(file::Union{String,IOStream}, count::Int; kwargs...) = read_frames(file, 1:count; kwargs...)
+read_frames(file::Union{String,IOStream}, index::Int; kwargs...) = read_frames(file, [index]; kwargs...)
 read_frames(file::Union{String,IOStream}; kwargs...) = read_frames(file, Iterators.countfrom(1); kwargs...)
 
 """
 Read a single frame from an ExtXYZ file
 """
-read_frame(file::Union{String,IOStream}, args...; kwargs...) = read_frames(file, args...; kwargs...)[1]
+read_frame(file::Union{String,IOStream}, index; kwargs...) = read_frames(file, index; kwargs...)[1]
+read_frame(file::Union{String,IOStream}; kwargs...) = read_frame(file, 1; kwargs...)
 
 export read_frame, read_frames, iread_frames
  
