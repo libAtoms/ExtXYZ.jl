@@ -150,7 +150,7 @@ The interal representation, shown in JSON format for readability, is as follows:
 Important dictionary keys include:
 
  - `N_atoms` - the number of atoms (mandatory)
- - `cell` - the unit cell, a 3x3 matrix of floats containing the cell vectors as row, i.e. the same as [ASE](https://wiki.fysik.dtu.dk/ase/ase/cell.html#ase.cell.Cell) (mandatory)
+ - `cell` - the unit cell, a 3x3 matrix of floats containing the cell vectors as rows, i.e. the same as [ASE](https://wiki.fysik.dtu.dk/ase/ase/cell.html#ase.cell.Cell) (mandatory)
  - `pbc` - periodic boundary conditions, `Vector{Bool}` of length 3 (optional)
  - `info` - dictionary containing per-configuration key/value pairs parsed from the comment (line #2 in each frame). These can include scalars, vectors and matrices of integer, real, bool and string scalars or vectors. (mandatory, can be empty)
  - `arrays` - dictionary containing per-atom properties as a `N_component x `N_atoms` matrix, reduced to a vector for the case `N_component = 1`. These represent scalar (`N_component = 1`) or vector (`N_component > 1`) per-atom properties, of integer (`I`), real (`R`), bool, (`L`) or string (`S`, scalars only) type. The set of properties is extracted from the special `Properties` key in the comment line. (mandatory, and must contain at least a string property `"species"` containing atomic symbols and a 3-column vector property
