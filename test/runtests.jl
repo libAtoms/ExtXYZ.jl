@@ -9,13 +9,13 @@ of float values `(v1, v2)` satisfy `isapprox(v1, v2)`
 """
 function Base.isapprox(seq1::AbstractDict, seq2::AbstractDict)
     for (k1,v1) in seq1
-        k1 ∈ keys(seq2) || return false
+        k1 ∈ keys(seq2) || (println("key $k1 missing from seq2"); return false)
         if v1 isa AbstractDict
             return isapprox(v1, seq2[k1])
         elseif v1 isa Array{AbstractFloat} || v1 isa AbstractFloat
-            v1 ≈ seq2[k1]  || return false
+            v1 ≈ seq2[k1]  || (println("key $k1: $v1 !≈ $(seq2[k1])"); return false)
         else
-            v1 == seq2[k1] || return false
+            v1 == seq2[k1] || (println("key $k1: $v1 != $(seq2[k1])"); return false)
         end
     end
     return true
@@ -36,7 +36,7 @@ Si        10.00000000      11.00000000      $frame.00000000          0         0
     outfile = "dump.xyz"
 
     try
-        @testset "read_extxyz" begin
+        @testset "read" begin
             seq1 = read_frames(infile)
 
             @test all([s["cell"][3,2] for s in seq1] .== 1.0:10.0)
@@ -82,8 +82,26 @@ Si        10.00000000      11.00000000      $frame.00000000          0         0
             @test all(seq1 .≈ seq2) # use custom isapprox(), since expect some loss of precision on round-trip
         end
 
+        @testset "iread" begin
+            seq1 = read_frames(infile)
+            seq2 = collect(iread_frames(infile))
+            @test all(seq1 .≈ seq2)
+        end
+
+        @testset "iwrite" begin
+            seq1 = read_frames(infile)
+            ch = Channel()
+            @async write_frames(outfile, ch)
+            for frame in seq1
+                put!(ch, frame)
+            end
+            close(ch)
+            seq2 = read_frames(outfile)
+            @test all(seq1 .≈ seq2)
+        end
+
     finally
-        rm(infile, force=true)
-        rm(outfile, force=true)
+        # rm(infile, force=true)
+        # rm(outfile, force=true)
     end
 end

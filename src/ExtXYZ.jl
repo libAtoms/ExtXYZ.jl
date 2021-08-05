@@ -240,7 +240,12 @@ function extract_lattice!(result_dict)
     return lattice
 end
 
+"""
+    read_frame(file)
 
+Read a single frame from the ExtXYZ file `file`, which can be a file pointer,
+open IO stream or a string filename.
+"""
 function read_frame(fp::Ptr{Cvoid}; verbose=false)
     nat, info, arrays = try
         read_frame_dicts(fp; verbose=verbose)
@@ -272,10 +277,25 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
     return dict
 end
 
+read_frame(file::Union{String,IOStream}, index; kwargs...) = read_frames(file, index; kwargs...)[1]
+read_frame(file::Union{String,IOStream}; kwargs...) = read_frame(file, 1; kwargs...)
+
 """
-Channel to yield a sequence of frames from an open file pointer
+    iread_frames(file[, range])
+
+Return a Channel for reading from an ExtXYZ file. Frames are yielded one by one.
+`range` can be a single integer, range object or integer array of frame indices.
+
+Example usage:
+
+```julia
+ch = iread_frames("file.xyz")
+for frame in ch
+    process(frame)
+end
+```
 """
-function iread_frames(fp::Ptr{Cvoid}, range; kwargs...)
+function iread_frames(fp::Ptr{Cvoid}, range; close_fp=false, kwargs...)
     Channel() do channel
         for frame in 1:first(range)-1
             atoms = read_frame(fp; kwargs...)
@@ -286,11 +306,28 @@ function iread_frames(fp::Ptr{Cvoid}, range; kwargs...)
             atoms === nothing && break
             put!(channel, atoms)
         end
+        if (close_fp)
+            cfclose(fp)
+        end
+        channel
     end
 end
 
+function iread_frames(file::Union{String,IOStream}, range; kwargs...)
+    fp = cfopen(file, "r")
+    fp == C_NULL && error("file $file cannot be opened for reading")
+    iread_frames(fp, range; close_fp=true, kwargs...)
+end
+
+iread_frames(file::Union{String,IOStream}, index::Int; kwargs...) = iread_frames(file, [index]; kwargs...)
+iread_frames(file::Union{String,IOStream}; kwargs...) = iread_frames(file, Iterators.countfrom(1); kwargs...)
+
 """
-Read frames from a ExtXYZ file, specified by a file pointer, filename or IOStream
+    read_frames(file[, range])
+
+Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename or IOStream.
+
+`range` can be a single integer, range object or integer array of frame indices.
 """
 read_frames(fp::Ptr{Cvoid}, range; kwargs...) = collect(iread_frames(fp, range; kwargs...))
 
@@ -303,12 +340,6 @@ end
 
 read_frames(file::Union{String,IOStream}, index::Int; kwargs...) = read_frames(file, [index]; kwargs...)
 read_frames(file::Union{String,IOStream}; kwargs...) = read_frames(file, Iterators.countfrom(1); kwargs...)
-
-"""
-Read a single frame from an ExtXYZ file
-"""
-read_frame(file::Union{String,IOStream}, index; kwargs...) = read_frames(file, index; kwargs...)[1]
-read_frame(file::Union{String,IOStream}; kwargs...) = read_frame(file, 1; kwargs...)
 
 function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
     nat = Cint(nat)
@@ -338,6 +369,12 @@ function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
     end
 end
 
+"""
+    write_frame(file, dict)
+
+Write a single atomic configuration represented by `dict` to `file`, which 
+can be a file pointer, open IO stream or string filename.
+"""
 function write_frame(fp::Ptr{Cvoid}, dict; verbose=false)
     nat = dict["N_atoms"]
     info = copy(dict["info"])
@@ -347,6 +384,19 @@ function write_frame(fp::Ptr{Cvoid}, dict; verbose=false)
     write_frame_dicts(fp, nat, info, dict["arrays"]; verbose=verbose)
 end
 
+"""
+    write_frames(file, dicts)
+
+Write a sequence of atomic configurations to `file`. Can also be used asynchronously
+by passing a Channel in place of `dicts`, e.g.
+
+```julia
+@async write_frames(outfile, ch)
+for frame in frames
+    put!(ch, frame)
+end
+```
+"""
 write_frames(fp::Ptr{Cvoid}, dicts; kwargs...) = write_frame.(dicts)
 
 function write_frames(file::Union{String,IOStream}, dicts; append=false, kwargs...)
