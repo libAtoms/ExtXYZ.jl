@@ -391,9 +391,12 @@ Write a sequence of atomic configurations to `file`. Can also be used asynchrono
 by passing a Channel in place of `dicts`, e.g.
 
 ```julia
-@async write_frames(outfile, ch)
-for frame in frames
-    put!(ch, frame)
+Channel() do ch
+    @async write_frames(outfile, ch)
+
+    for frame in frames
+        put!(ch, frame)
+    end
 end
 ```
 """

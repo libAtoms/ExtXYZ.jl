@@ -1,6 +1,6 @@
 # ExtXYZ.jl
 
-This package provides Julia bindings for the [extxyz](https://github.com/libAtoms/extxyz) C library which implements a parser and writer for the extended XYZ file format used in materials and molecular modelling, according to the [specification](https://github.com/libAtoms/extxyz#extended-xyz-specification-and-parsing-tools) set out in the extxyz repo.
+This package provides Julia bindings for the [extxyz](https://github.com/libAtoms/extxyz) C library which implements a parser and writer for the extended XYZ file format used in materials and molecular modelling, following the [specification](https://github.com/libAtoms/extxyz#extended-xyz-specification-and-parsing-tools) set out in the extxyz repo.
 
 **Maintainer:** James Kermode ([@jameskermode](https://github.com/jameskermode)).
 
@@ -18,7 +18,7 @@ or for the development version:
 ] dev https://github.com/libAtoms/ExtXYZ.jl
 ```
 
-The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP will shortly use `ExtXYZ.jl` internally to read and write extended XYZ files.
+The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion package. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atom` instances.
 
 ## Basic Usage
 
@@ -48,6 +48,18 @@ for frame in iread_frames("input.xyz")
 do
 ```
 
+`write_frames()` can be used for asynchronous writing by passing in a `Channel`:
+
+```julia
+Channel() do ch
+    @async write_frames(outfile, ch)
+    
+    for frame in frames
+        put!(ch, frame)
+    end
+end
+```
+
 ## Atoms data structure
 
 In lieu of a package-independent data structure for representing atomic structures (i.e. an equivalent to ASE's `Atoms` class in the Python ecosystem), this package uses a `Dict{String}{Any}`. For the extended XYZ file:
@@ -65,7 +77,7 @@ Si        0.00000000      2.72000000      2.72000000
 Si        1.36000000      4.08000000      4.08000000
 ```
 
-The interal representation, shown in JSON format for readability, is as follows:
+The internal representation, shown in JSON format for readability, is as follows:
 
 ```json
 {
@@ -153,6 +165,10 @@ Important dictionary keys include:
  - `cell` - the unit cell, a 3x3 matrix of floats containing the cell vectors as rows, i.e. the same as [ASE](https://wiki.fysik.dtu.dk/ase/ase/cell.html#ase.cell.Cell) (mandatory)
  - `pbc` - periodic boundary conditions, `Vector{Bool}` of length 3 (optional)
  - `info` - dictionary containing per-configuration key/value pairs parsed from the comment (line #2 in each frame). These can include scalars, vectors and matrices of integer, real, bool and string scalars or vectors. (mandatory, can be empty)
- - `arrays` - dictionary containing per-atom properties as a `N_component x `N_atoms` matrix, reduced to a vector for the case `N_component = 1`. These represent scalar (`N_component = 1`) or vector (`N_component > 1`) per-atom properties, of integer (`I`), real (`R`), bool, (`L`) or string (`S`, scalars only) type. The set of properties is extracted from the special `Properties` key in the comment line. (mandatory, and must contain at least a string property `"species"` containing atomic symbols and a 3-column vector property
+ - `arrays` - dictionary containing per-atom properties as a `N_component x N_atoms` matrix, reduced to a vector for the case `N_component = 1`. These represent scalar (`N_component = 1`) or vector (`N_component > 1`) per-atom properties, of integer (`I`), real (`R`), bool, (`L`) or string (`S`, scalars only) type. The set of properties is extracted from the special `Properties` key in the comment line. (mandatory, and must contain at least a string property `"species"` containing atomic symbols and a 3-column vector property
 
-`JuLIP.XYZ.read_extxyz()` and `JuLIP.XYZ.write_extxyz()` contain functionality to convert these dictionaries to/from `JuLIP.Atoms` instances.
+## Interoperability with other packages
+
+- `JuLIP.XYZ.read_extxyz()` and `JuLIP.XYZ.write_extxyz()` contain functionality to convert `ExtXYZ.jl` dictionaries to/from `JuLIP.Atoms` instances.
+
+Please open issues/PRs with suggestions of other packages it would be useful to provide interfaces to.
