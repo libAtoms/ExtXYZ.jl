@@ -22,9 +22,7 @@ The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional -
 
 ## Basic Usage
 
-Four main functions are exported: `read_frame()` and `write_frame()` for reading and writing single configurations (snapshots), respectively, and `read_frames()` and `write_frames()` for reading and writing trajectories.
-
-All functions can work with string filenames, an open `Base.IO` instance or (intended primarily for internal use) a C `FILE*` pointer, stored as a `Ptr{Cvoid}` type.
+Four key functions are exported: `read_frame()` and `write_frame()` for reading and writing single configurations (snapshots), respectively, and `read_frames()` and `write_frames()` for reading and writing trajectories. All functions can work with string filenames, an open `Base.IO` instance or (intended primarily for internal use) a C `FILE*` pointer, stored as a `Ptr{Cvoid}` type.
 
 ```julia
 using ExtXYZ
@@ -48,7 +46,7 @@ for frame in iread_frames("input.xyz")
 do
 ```
 
-`write_frames()` can be used for asynchronous writing by passing in a `Channel`:
+`write_frames()` can also be used for asynchronous writing by passing in a `Channel`:
 
 ```julia
 Channel() do ch
