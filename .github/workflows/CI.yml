@@ -38,11 +38,11 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - name: Install docs dependencies
-        if: ${{ matrix.os == ubuntu-latest }} && ${{ matrix.version == 1.6 }}
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '1.6'
         run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
       - name: Build and deploy docs
-        if: (matrix.os == 'ubuntu-latest') && (matrix.version == '1.6')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: 1
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '1.6'
         run: julia --project=docs/ docs/make.jl
