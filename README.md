@@ -18,7 +18,7 @@ or for the development version:
 ] dev https://github.com/libAtoms/ExtXYZ.jl
 ```
 
-The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion package. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atom` instances.
+The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atom` instances.
 
 ## Basic Usage
 
@@ -165,7 +165,7 @@ Important dictionary keys include:
  - `info` - dictionary containing per-configuration key/value pairs parsed from the comment (line #2 in each frame). These can include scalars, vectors and matrices of integer, real, bool and string scalars or vectors. (mandatory, can be empty)
  - `arrays` - dictionary containing per-atom properties as a `N_component x N_atoms` matrix, reduced to a vector for the case `N_component = 1`. These represent scalar (`N_component = 1`) or vector (`N_component > 1`) per-atom properties, of integer (`I`), real (`R`), bool, (`L`) or string (`S`, scalars only) type. The set of properties is extracted from the special `Properties` key in the comment line. (mandatory, and must contain at least a string property `"species"` containing atomic symbols and a 3-column vector property
 
-## Interoperability with other packages
+## Related packages
 
 - `JuLIP.XYZ.read_extxyz()` and `JuLIP.XYZ.write_extxyz()` contain functionality to convert `ExtXYZ.jl` dictionaries to/from `JuLIP.Atoms` instances.
 
