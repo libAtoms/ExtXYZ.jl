@@ -8,7 +8,7 @@ This package provides Julia bindings for the [extxyz](https://github.com/libAtom
 
 ## Installation
 
-This package will shortly be registered in the General registry, so installation of the latest stable release is as simple as pressing `]` to enter `pkg>` mode in the Julia REPL, and then entering:
+This package is registered in the General registry, so installation of the latest stable release is as simple as pressing `]` to enter `pkg>` mode in the Julia REPL, and then entering:
 
 ```julia
 pkg> add ExtXYZ
@@ -22,11 +22,9 @@ pkg> dev https://github.com/libAtoms/ExtXYZ.jl
 
 ## Related packages
 
-The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atom` instances.
+The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP will shortly be able to use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
 
-- `JuLIP.XYZ.read_extxyz()` and `JuLIP.XYZ.write_extxyz()` contain functionality to convert `ExtXYZ.jl` dictionaries to/from `JuLIP.Atoms` instances.
-
-Please open issues/PRs with suggestions of other packages it would be useful to provide interfaces to.
+Please open issues/PRs here with suggestions of other packages it would be useful to provide interfaces to.
 
 ## Basic Usage
 
