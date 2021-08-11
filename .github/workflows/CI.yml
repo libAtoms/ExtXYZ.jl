@@ -2,6 +2,7 @@ name: CI
 on:
   - push
   - pull_request
+
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -37,12 +38,34 @@ jobs:
             ${{ runner.os }}-
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+
+
+  docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: 1.6
+          arch: x86
+      - name: Add MolSim registry
+        run: julia -e 'using Pkg; pkg"registry add https://github.com/JuliaMolSim/MolSim.git"'
+      - uses: actions/cache@v1
+        env:
+          cache-name: cache-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-test-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-test-${{ env.cache-name }}-
+            ${{ runner.os }}-test-
+            ${{ runner.os }}-
+    
       - name: Install docs dependencies
-        if: matrix.os == 'ubuntu-latest' && matrix.version == '1.6'
         run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
       - name: Build and deploy docs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: 1
-        if: matrix.os == 'ubuntu-latest' && matrix.version == '1.6'
         run: julia --project=docs/ docs/make.jl
