@@ -44,7 +44,7 @@ cfclose(fp::Ptr{Cvoid}) = ccall(:fclose,
 
 function cfopen(f::Function, iostream::IOStream, mode::String="r")
     newfd = Libc.dup(RawFD(fd(iostream)))
-    fp = ccall(@static Sys.iswindows() ? :_fdopen : :fdopen, 
+    fp = ccall(@static(Sys.iswindows() ? :_fdopen : :fdopen),
                Ptr{Cvoid}, (Cint, Cstring), newfd, mode)
     try
         f(fp)
