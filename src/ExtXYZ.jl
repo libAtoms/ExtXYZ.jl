@@ -32,19 +32,19 @@ module ExtXYZ
 
 using extxyz_jll
 
-cfopen(filename::String, mode::String) = ccall(:fopen, 
+cfopen(filename::String, mode::String) = ccall(@static Sys.iswindows() ? : :_fopen : :fopen, 
                                                 Ptr{Cvoid},
                                                 (Cstring, Cstring),
                                                 filename, mode)
                                                 
-cfclose(fp::Ptr{Cvoid}) = ccall(:fclose,
+cfclose(fp::Ptr{Cvoid}) = ccall(@static Sys.iswindows() ? :_fclose : :fclose,
                                 Cint,
                                 (Ptr{Cvoid},),
                                 fp)
 
 function cfopen(f::Function, iostream::IOStream, mode::String="r")
     newfd = Libc.dup(RawFD(fd(iostream)))
-    fp = ccall(:fdopen, Ptr{Cvoid}, (Cint, Cstring), newfd, mode)
+    fp = ccall(@static Sys.iswindows() ? :_fdopen : :fdopen, Ptr{Cvoid}, (Cint, Cstring), newfd, mode)
     try
         f(fp)
     finally
