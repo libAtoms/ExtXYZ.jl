@@ -32,7 +32,7 @@ module ExtXYZ
 
 using extxyz_jll
 
-cfopen(filename::String, mode::String) = ccall(@static Sys.iswindows() ? : :_fopen : :fopen, 
+cfopen(filename::String, mode::String) = ccall(@static Sys.iswindows() ? :_fopen : :fopen, 
                                                 Ptr{Cvoid},
                                                 (Cstring, Cstring),
                                                 filename, mode)
