@@ -118,7 +118,7 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
                     @test frame["N_atoms"] ≈ length(ase_atoms)
                     @test frame["arrays"]["pos"] ≈ ase_atoms.positions'
                     @test frame["arrays"]["gap_force"] ≈ ase_atoms.arrays["gap_force"]'
-                    @test frame["arrays"]["n_neighb"] ≈ ase_atoms.arrays["n_neighb"]   
+                    @test frame["arrays"]["n_neighb"] ≈ ase_atoms.arrays["n_neighb"]
                     @test frame["cell"] ≈ ase_atoms.cell.array
                 end
             end            
@@ -127,7 +127,7 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
         end
 
     finally
-        # rm(infile, force=true)
-        # rm(outfile, force=true)
+        rm(infile, force=true)
+        rm(outfile, force=true)
     end
 end
