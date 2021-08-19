@@ -22,7 +22,7 @@ pkg> dev https://github.com/libAtoms/ExtXYZ.jl
 
 ## Related packages
 
-The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP will shortly be able to use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
+The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files to/from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
 
 Please open issues/PRs here with suggestions of other packages it would be useful to provide interfaces to.
 
