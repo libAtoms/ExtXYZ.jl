@@ -105,7 +105,7 @@ const TYPE_MAP = Dict(DATA_I => Cint,
 
 import Base: convert
 
-function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry})
+function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry}; transpose_arrays=false)
     result = Dict{String,Any}()
     node_ptr = c_dict
     while node_ptr != C_NULL
@@ -144,7 +144,8 @@ function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry})
             end
 
             if node.nrows != 0 && node.ncols != 0
-                value = permutedims(value, ndims(value):-1:1)
+                value = reshape(value, size(value, 2), size(value, 1))
+                transpose_arrays && (value = permutedims(value, (2, 1)))
             end
         end
 
@@ -163,9 +164,9 @@ Ctype(::Type{Bool}) = (Cint, DATA_B)
 Ctype(::Type{<:Real}) = (Cdouble, DATA_F)
 Ctype(::Type{String}) = (Cstring, DATA_S)
 
-Cvalue(value::T) where {T<:Union{Integer,Bool,Real}} = convert(Ctype(T)[1], value)
+Cvalue(value::T; transpose_arrays=nothing) where {T<:Union{Integer,Bool,Real}} = convert(Ctype(T)[1], value)
 
-function Cvalue(value::String) 
+function Cvalue(value::String; transpose_arrays=nothing) 
     ptr = pointer(Base.unsafe_convert(Cstring, Base.cconvert(Cstring, value)))
     new = Ptr{Cchar}(Libc.malloc(sizeof(value)+1))
     unsafe_copyto!(new, ptr, sizeof(value))
@@ -173,11 +174,18 @@ function Cvalue(value::String)
     return new
 end
 
-function Cvalue(value::Array{T,N}) where {T<:Union{Integer,Bool,Real},N}
-    convert(Array{Ctype(T)[1]}, permutedims(value, ndims(value):-1:1))
+function Cvalue(value::Array{T,N}; transpose_arrays=false) where {T<:Union{Integer,Bool,Real},N}
+    if ndims(value) == 2
+        value = reshape(value, size(value, 2), size(value, 1))
+    end
+    value = convert(Array{Ctype(T)[1]}, value)
+    if ndims(value) == 2 && transpose_arrays
+        value = permutedims(value, (2, 1))
+    end
+    return value
 end
 
-function Cvalue(value::Array{String,1})
+function Cvalue(value::Array{String,1}; transpose_arrays=nothing)
     result = Array{Ptr{Cchar}}(undef, length(value))
     result .= Cvalue.(value)
     return result
@@ -188,7 +196,7 @@ dims(value) = (0, 0)
 dims(value::AbstractVector) = (0, size(value, 1))
 dims(value::AbstractMatrix) = (size(value, 1), size(value, 2))
 
-function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=nothing)
+function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=nothing, transpose_arrays=false)
     c_dict_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry)))
     node_ptr = c_dict_ptr
 
@@ -196,7 +204,7 @@ function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=n
     for (idx, key) in enumerate(ordered_keys)
         value = dict[key]
         ckey = Cvalue(key)
-        cvalue = Cvalue(value)
+        cvalue = Cvalue(value; transpose_arrays=transpose_arrays)
         nrow, ncol = dims(cvalue)
         type, data_t = Ctype(typeof(value))
         data = Ptr{type}(Libc.malloc(sizeof(cvalue)))
@@ -241,8 +249,8 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false)
 
         pinfo = reinterpret(Ptr{DictEntry}, info[])
         parrays = reinterpret(Ptr{DictEntry}, arrays[])
-        jinfo = convert(Dict{String,Any}, pinfo)
-        jarrays = convert(Dict{String,Any}, parrays)
+        jinfo = convert(Dict{String,Any}, pinfo, transpose_arrays=true)
+        jarrays = convert(Dict{String,Any}, parrays, transpose_arrays=false)
         return nat[], jinfo, jarrays
 
     finally
@@ -297,7 +305,7 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
 
     # cell is transpose of the stored lattice
     lattice = extract_lattice!(info)
-    dict["cell"] = permutedims(lattice, (2,1))
+    dict["cell"] = permutedims(lattice, (2, 1))
 
     delete!(info, "Properties")
 
