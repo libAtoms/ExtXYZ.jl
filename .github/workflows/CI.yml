@@ -49,6 +49,8 @@ jobs:
         env: 
           PYTHON: python
       - uses: julia-actions/julia-runtest@v1
+        env: 
+          PYTHON: python
 
 
   docs:
