@@ -22,7 +22,7 @@ pkg> dev https://github.com/libAtoms/ExtXYZ.jl
 
 ## Related packages
 
-The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP will shortly be able to use `ExtXYZ.jl` to read and write extended XYZ files and convert/to from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
+The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files to/from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
 
 Please open issues/PRs here with suggestions of other packages it would be useful to provide interfaces to.
 
@@ -85,81 +85,81 @@ The internal representation, shown in JSON format for readability, is as follows
 
 ```json
 {
-    "N_atoms": 8,
-    "arrays": {
-        "pos": [
-            [
-                0.0,
-                0.0,
-                1.36
-            ],
-            [
-                0.0,
-                4.08,
-                4.08
-            ],
-            [
-                0.0,
-                4.08,
-                0.0
-            ],
-            [
-                1.36,
-                1.36,
-                2.72
-            ],
-            [
-                1.36,
-                2.72,
-                2.72
-            ],
-            [
-                1.36,
-                0.0,
-                1.36
-            ],
-            [
-                2.72,
-                2.72,
-                4.08
-            ],
-            [
-                2.72,
-                4.08,
-                4.08
-            ]
-        ],
-        "species": [
-            "Si",
-            "Si",
-            "Si",
-            "Si",
-            "Si",
-            "Si",
-            "Si",
-            "Si"
-        ]
-    },
-    "info": {
-        "Time": 0.0
-    },
-    "cell": [
-        [
-            5.44,
+   "N_atoms": 8,
+   "arrays": {
+      "pos": [
+         [
+            0.0,
             0.0,
             0.0
-        ],
-        [
-            0.0,
-            5.44,
+         ],
+         [
+            1.36,
+            1.36,
+            1.36
+         ],
+         [
+            2.72,
+            2.72,
             0.0
-        ],
-        [
+         ],
+         [
+            4.08,
+            4.08,
+            1.36
+         ],
+         [
+            2.72,
             0.0,
+            2.72
+         ],
+         [
+            4.08,
+            1.36,
+            4.08
+         ],
+         [
             0.0,
-            5.44
-        ]
-    ]
+            2.72,
+            2.72
+         ],
+         [
+            1.36,
+            4.08,
+            4.08
+         ]
+      ],
+      "species": [
+         "Si",
+         "Si",
+         "Si",
+         "Si",
+         "Si",
+         "Si",
+         "Si",
+         "Si"
+      ]
+   },
+   "info": {
+      "Time": 0.0
+   },
+   "cell": [
+      [
+         5.44,
+         0.0,
+         0.0
+      ],
+      [
+         0.0,
+         5.44,
+         0.05
+      ],
+      [
+         0.0,
+         0.0,
+         0.44
+      ]
+   ]
 }
 ```
 
