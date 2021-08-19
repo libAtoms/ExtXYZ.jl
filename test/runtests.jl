@@ -122,8 +122,12 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
                     @test frame["cell"] ≈ ase_atoms.cell.array
                 end
             end            
-        catch
-            println("ASE not installed, skipping ASE comparison tests")
+        catch e
+            if e isa PyError
+                println("ASE not installed, skipping ASE comparison tests")
+            else
+                throw(e)
+            end
         end
 
     finally
