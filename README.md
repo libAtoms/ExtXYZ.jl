@@ -70,7 +70,7 @@ In lieu of a package-independent data structure for representing atomic structur
 
 ```
 8
-Lattice="5.44 0.0 0.0 0.0 5.44 0.0 0.0 0.05.44" Properties=species:S:1:pos:R:3 Time=0.0
+Lattice="5.44 0.0 0.0 0.0 5.44 0.0 0.0 0.0 5.44" Properties=species:S:1:pos:R:3 Time=0.0
 Si        0.00000000      0.00000000      0.00000000
 Si        1.36000000      1.36000000      1.36000000
 Si        2.72000000      2.72000000      0.00000000
@@ -152,12 +152,12 @@ The internal representation, shown in JSON format for readability, is as follows
       [
          0.0,
          5.44,
-         0.05
+         0.0
       ],
       [
          0.0,
          0.0,
-         0.44
+         5.44
       ]
    ]
 }
