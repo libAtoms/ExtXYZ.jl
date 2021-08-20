@@ -382,7 +382,7 @@ read_frames(file::Union{String,IOStream}; kwargs...) = read_frames(file, Iterato
 
 function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
     nat = Cint(nat)
-    cinfo = convert(Ptr{DictEntry}, info)
+    cinfo = convert(Ptr{DictEntry}, info; transpose_arrays=true)
 
     # ensure "species" goes in column 1 and "pos" goes in column 2
     ordered_keys = collect(keys(arrays))

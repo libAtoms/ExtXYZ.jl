@@ -12,8 +12,8 @@ function Base.isapprox(seq1::AbstractDict, seq2::AbstractDict)
     for (k1,v1) in seq1
         k1 ∈ keys(seq2) || (println("key $k1 missing from seq2"); return false)
         if v1 isa AbstractDict
-            return isapprox(v1, seq2[k1])
-        elseif v1 isa Array{AbstractFloat} || v1 isa AbstractFloat
+            v1 ≈ seq2[k1] || (println("key $k1: $v1 !≈ $(seq2[k1])"); return false)
+        elseif v1 isa Array{<:AbstractFloat} || v1 isa AbstractFloat
             v1 ≈ seq2[k1]  || (println("key $k1: $v1 !≈ $(seq2[k1])"); return false)
         else
             v1 == seq2[k1] || (println("key $k1: $v1 != $(seq2[k1])"); return false)
