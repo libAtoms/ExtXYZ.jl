@@ -386,12 +386,10 @@ function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
 
     # ensure "species" goes in column 1 and "pos" goes in column 2
     ordered_keys = collect(keys(arrays))
-    perm = collect(1:length(ordered_keys))
     species_idx = findfirst(isequal("species"), ordered_keys)
+    ordered_keys[1], ordered_keys[species_idx] = ordered_keys[species_idx], ordered_keys[1]
     pos_idx = findfirst(isequal("pos"), ordered_keys)
-    perm[1], perm[species_idx] = perm[species_idx], perm[1]
-    perm[2], perm[pos_idx] = perm[pos_idx], perm[2]
-    permute!(ordered_keys, perm)
+    ordered_keys[2], ordered_keys[pos_idx] = ordered_keys[pos_idx], ordered_keys[2]
     carrays = convert(Ptr{DictEntry}, arrays; ordered_keys=ordered_keys)
 
     if verbose
