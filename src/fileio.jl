@@ -273,7 +273,7 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
 
     # cell is transpose of the stored lattice
     lattice = extract_lattice!(info)
-    dict["cell"] = permutedims(lattice, (2, 1))
+    if (!isnothing(lattice)) dict["cell"] = permutedims(lattice, (2, 1)) end
 
     delete!(info, "Properties")
 
@@ -383,7 +383,7 @@ can be a file pointer, open IO stream or string filename.
 function write_frame(fp::Ptr{Cvoid}, dict; verbose=false)
     nat = dict["N_atoms"]
     info = copy(dict["info"])
-    info["Lattice"] = permutedims(dict["cell"], (2, 1))
+    if ("cell" in keys(dict)) info["Lattice"] = permutedims(dict["cell"], (2, 1)) end
     info["pbc"] = get(dict, "pbc", [true, true, true])
 
     write_frame_dicts(fp, nat, info, dict["arrays"]; verbose=verbose)
