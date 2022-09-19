@@ -2,14 +2,14 @@
 requirejs.config({
   paths: {
     'headroom-jquery': 'https://cdnjs.cloudflare.com/ajax/libs/headroom/0.12.0/jQuery.headroom.min',
-    'katex-auto-render': 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/contrib/auto-render.min',
-    'katex': 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min',
-    'highlight-julia-repl': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.0.1/languages/julia-repl.min',
-    'highlight': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.0.1/highlight.min',
+    'katex-auto-render': 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/contrib/auto-render.min',
+    'katex': 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.24/katex.min',
+    'highlight-julia-repl': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/languages/julia-repl.min',
+    'highlight': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/highlight.min',
     'jqueryui': 'https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min',
     'jquery': 'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min',
     'headroom': 'https://cdnjs.cloudflare.com/ajax/libs/headroom/0.12.0/headroom.min',
-    'highlight-julia': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.0.1/languages/julia.min',
+    'highlight-julia': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/languages/julia.min',
   },
   shim: {
   "headroom-jquery": {
@@ -283,6 +283,12 @@ require(['jquery'], function($) {
 
 // update the version selector with info from the siteinfo.js and ../versions.js files
 $(document).ready(function() {
+  // If the version selector is disabled with DOCUMENTER_VERSION_SELECTOR_DISABLED in the
+  // siteinfo.js file, we just return immediately and not display the version selector.
+  if (typeof DOCUMENTER_VERSION_SELECTOR_DISABLED === 'boolean' && DOCUMENTER_VERSION_SELECTOR_DISABLED) {
+    return;
+  }
+
   var version_selector = $("#documenter .docs-version-selector");
   var version_selector_select = $("#documenter .docs-version-selector select");
 
