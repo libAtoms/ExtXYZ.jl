@@ -16,6 +16,8 @@ jobs:
       matrix:
         version:
           - '1.6'
+          - '1.7'
+          - '1.8'
           - 'nightly'
         python: [3.7]
         os:
