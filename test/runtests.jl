@@ -107,6 +107,16 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
             @test all(seq1 .≈ seq2)
         end
 
+        @testset "AtomsBase" begin
+            seq1 = ExtXYZ.load(infile)
+            ExtXYZ.save(outfile, seq1)
+            seq2 = ExtXYZ.load(outfile)
+            @test all(seq1 .≈ seq2)
+
+            at = ExtXYZ.load(infile, 1)
+            @test at ≈ seq1[1]
+        end
+
         try
             ase_io = pyimport("ase.io")
 

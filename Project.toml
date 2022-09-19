@@ -4,13 +4,17 @@ authors = ["James Kermode <J.R.Kermode@warwick.ac.uk> and contributors"]
 version = "0.1.6-DEV"
 
 [deps]
+AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
+PeriodicTable = "7b2266bf-644c-5ea3-82d8-af4bbd25a884"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 extxyz_jll = "6ecdc6fc-93a8-5528-aee3-ac7ae1c60be7"
-
-[extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
 julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
