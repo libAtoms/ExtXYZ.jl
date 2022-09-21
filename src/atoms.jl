@@ -52,7 +52,7 @@ _read_convert(value::Vector{Int32}) = Int.(value)
 
 _write_convert(value) = value
 _write_convert(value::Vector{T}) where {T} = ustrip.(value)
-_write_convert(value::Vector{Vector{T}}) where {T} = ustrip.(hcat((value)...))
+_write_convert(value::Vector{Vector{T}}) where {T} = ustrip.(uconvert.(u"Å",(hcat((value)...))))
 _write_convert(value::Vector{Symbol}) = string.(value)
 _write_convert(value::Symbol) = string(value)
 
@@ -64,7 +64,7 @@ _dict_remap_rev(d) = _dict_remap_names(d, REV_NAME_MAP, string, String, _write_c
 function Atoms(dict::Dict{String}{Any})
     atom_data = _dict_remap_fwd(dict["arrays"])
     natoms = dict["N_atoms"]
-    atom_data[:positions] = [ atom_data[:positions][:, i] for i=1:natoms ] # from matrix to vector of vectors
+    atom_data[:positions] = [ atom_data[:positions][:, i] for i=1:natoms ].*u"Å" # from matrix to vector of vectors
 
     if :atomic_symbols in keys(atom_data)
        sym = atom_data[:atomic_symbols] = Symbol.(atom_data[:atomic_symbols])
@@ -77,13 +77,17 @@ function Atoms(dict::Dict{String}{Any})
     end
     atom_data[:atomic_numbers] === nothing && error("atomic numbers not defined - either 'Z' or 'species' must be present")
  
-    # mass - lookup from atomic number if not present
-    # if !haskey(atom_data, :atomic_masses)
-    #    atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass)
-    # end
+    # mass - lookup from atomic number if not present look up from atomic_symbols
+    if !haskey(atom_data, :atomic_masses)
+        if haskey(atom_data, :atomic_numbers)
+            atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass)
+        elseif haskey(atom_data, :atomic_symbols)
+            atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_symbols]], :atomic_mass)
+        end
+    end
   
     system_data = _dict_remap_fwd(dict["info"])
-    system_data[:box] = [dict["cell"][i, :] for i in 1:D ] # lattice vectors are rows from cell matrix
+    system_data[:box] = [dict["cell"][i, :] for i in 1:D ].*u"Å" # lattice vectors are rows from cell matrix
     pbc = get(dict, "pbc", [true, true, true]) # default to periodic in all directions
     system_data[:boundary_conditions] =[p ? Periodic() : DirichletZero() for p in pbc]
 
@@ -94,14 +98,26 @@ read_dict(dict::Dict{String}{Any}) = Atoms(dict)
 
 function write_dict(atoms::Atoms)
     system_data = Dict(pairs(atoms.system_data))
+    atom_data = Dict(pairs(atoms.atom_data))
+    pop!(atom_data, :atomic_masses)
+    dim = n_dimensions(atoms)
+    natoms = length(atoms)
     bcs = pop!(system_data, :boundary_conditions)
     box = pop!(system_data, :box)
+    # write_convert??????????????????????
+    #[box[i] = Unitful.uconvert.(u"Å", box[i]) for i=1:dim]
+    #box = zeros(3,3)
+    #[box[i,1:dim] = Unitful.ustrip.(Unitful.uconvert.(u"Å", box[i])) for i=1:dim]
+    #pos = zeros(3, natoms)
+    #[pos[1:dim,i] = Unitful.ustrip.(Unitful.uconvert.(u"Å", position(system)[i])) for i=1:natoms]
     dict = Dict(
-        "N_atoms" => length(atoms),
-        "cell" => vcat(box'...),
+        "N_atoms" => natoms,
+        #"cell" => vcat(Unitful.ustrip.(box)'...),
+        "cell" => (_write_convert(box))',
         "pbc" => isequal.(bcs, [Periodic() for i=1:D]) |> Array,
         "info" => _dict_remap_rev(system_data),
-        "arrays" => _dict_remap_rev(atoms.atom_data))
+        #"arrays" => _dict_remap_rev(atoms.atom_data))
+        "arrays" => _dict_remap_rev(atom_data))
     return dict
 end
 
@@ -111,6 +127,34 @@ bounding_box(sys::Atoms)        = sys.system_data.box
 boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
 Base.length(sys::Atoms)         = length(sys.atom_data.positions)
 Base.size(sys::Atoms)           = size(sys.atom_data.positions)
+
+
+##################################################################################
+## me
+##################################################################################
+# get data of the system without mandatory information(boundary_conditions, box)
+function data(s::Atoms)
+    system_dict = Dict(zip(keys(s.system_data), s.system_data))
+    for key in [:boundary_conditions, :box]
+        pop!(system_dict, key)
+    end
+    return system_dict
+end
+
+# get data of the i-th atom without mandatory information(positions, atomic_symbols, atomic_masses, atomic_numbers)
+function data(s::Atoms, i)
+    atom_dict = Dict(zip(keys(s.atom_data), s.atom_data))
+    data = Dict{Symbol, Any}()
+    for key in keys(atom_dict)
+        if key in [:positions, :atomic_symbols, :atomic_masses, :atomic_numbers]
+            continue
+        end
+        push!(data, key => atom_dict[key][i])
+    end
+    data
+end
+#################################################################################
+#################################################################################
 
 function Base.isapprox(sys1::Atoms{NT1,NT2}, sys2::Atoms{NT1,NT2}) where {NT1, NT2}
     for (seq1, seq2) in [(sys1.system_data, sys2.system_data),
@@ -160,3 +204,6 @@ end
 save(file::Union{String,IOStream}, system::Atoms; kwargs...) = write_frame(file, write_dict(system); kwargs...)
 
 save(file::Union{String,IOStream}, systems::Vector{Atoms{NT1,NT2}}; kwargs...) where {NT1,NT2} = write_frames(file, write_dict.(systems); kwargs...)
+#save(file::Union{String,IOStream}, systems::Vector{Atoms}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
+#save(file::Union{String,IOStream}, systems; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
+#save(file::AbstractString, systems::Vector{Atoms{NT1,NT2}}; kwargs...) where {NT1,NT2} = write_frames(file, write_dict.(systems); kwargs...)
