@@ -122,7 +122,6 @@ boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
 Base.length(sys::Atoms)         = length(sys.atom_data.positions)
 Base.size(sys::Atoms)           = size(sys.atom_data.positions)
 
-
 function Base.isapprox(sys1::Atoms{NT1,NT2}, sys2::Atoms{NT1,NT2}) where {NT1, NT2}
     for (seq1, seq2) in [(sys1.system_data, sys2.system_data),
                          (sys1.atom_data, sys2.atom_data)]
