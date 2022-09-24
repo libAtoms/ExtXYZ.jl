@@ -92,6 +92,8 @@ function Atoms(dict::Dict{String}{Any})
         elseif haskey(atom_data, :atomic_symbols)
             atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_symbols]], :atomic_mass)
         end
+    else
+        atom_data[:atomic_masses] .* u"u"
     end
   
     system_data = _dict_remap_fwd(dict["info"])
