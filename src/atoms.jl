@@ -108,9 +108,7 @@ function write_dict(atoms::Atoms)
     system_data = Dict(pairs(atoms.system_data))
     atom_data = Dict(pairs(atoms.atom_data))
     if haskey(atom_data, :atomic_masses) 
-        if atom_data[:atomic_masses] == getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass)
-            pop!(atom_data, :atomic_masses)
-        elseif atom_data[:atomic_masses] == getfield.(elements[atom_data[:atomic_symbols]], :atomic_mass)
+        if all(atom_data[:atomic_masses] .== getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass))
             pop!(atom_data, :atomic_masses)
         end
     end
@@ -180,3 +178,4 @@ end
 save(file::Union{String,IOStream}, system::Atoms; kwargs...) = write_frame(file, write_dict(system); kwargs...)
 
 save(file::Union{String,IOStream}, systems::Vector{Atoms{NT1,NT2}}; kwargs...) where {NT1,NT2} = write_frames(file, write_dict.(systems); kwargs...)
+save(file::Union{String,IOStream}, systems::Vector{Atoms}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
