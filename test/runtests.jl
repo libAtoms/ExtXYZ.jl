@@ -1,6 +1,8 @@
 using ExtXYZ
 using Test
 using PyCall
+using Unitful
+using AtomsBase
 
 """
 Check two dictionaries `seq1` and `seq2` are approximately equal
@@ -19,6 +21,13 @@ function Base.isapprox(seq1::AbstractDict, seq2::AbstractDict)
             v1 == seq2[k1] || (println("key $k1: $v1 != $(seq2[k1])"); return false)
         end
     end
+    return true
+end
+
+function Test_Units(seq::ExtXYZ.Atoms)
+    all([all(unit.(position(seq)[i]) .== u"Å") for i=1:length(seq)]) || return false
+    all([all(unit.(bounding_box(seq)[i]) .== u"Å") for i=1:n_dimensions(seq)]) || return false
+    all([all(unit.(atomic_mass(seq)[i]) .== u"u") for i=1:length(seq)]) || return false
     return true
 end
 
@@ -115,6 +124,7 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
 
             at = ExtXYZ.load(infile, 1)
             @test at ≈ seq1[1]
+            @test all(Test_Units.(vcat(seq1, seq2)))
         end
 
         try
