@@ -51,14 +51,27 @@ _read_convert(value::Int32) = Int(value)
 _read_convert(value::Vector{Int32}) = Int.(value)
 
 _write_convert(value) = value
+_write_convert(value::T) where {T<:Unitful.Length} = ustrip(uconvert(u"Å", value))
 _write_convert(value::Vector{T}) where {T<:Unitful.Length} = ustrip.(uconvert.(u"Å", value)) 
 _write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Length} = ustrip.(uconvert.(u"Å",(hcat((value)...))))
+_write_convert(value::T) where {T<:Unitful.Velocity} = ustrip(uconvert(u"Å/(Å*sqrt(u/eV))", value))
 _write_convert(value::Vector{T}) where {T<:Unitful.Velocity} = ustrip.(uconvert.(u"Å/(Å*sqrt(u/eV))", value))
 _write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Velocity} = ustrip.(uconvert.(u"Å/(Å*sqrt(u/eV))",(hcat((value)...))))
+_write_convert(value::T) where {T<:Unitful.Mass} = ustrip(uconvert(u"u", value))
 _write_convert(value::Vector{T}) where {T<:Unitful.Mass} = ustrip.(uconvert.(u"u", value))
 _write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Mass} = ustrip.(uconvert.(u"u",(hcat((value)...))))
+_write_convert(value::T) where {T<:Unitful.Energy} = ustrip(uconvert(u"eV", value))
 _write_convert(value::Vector{T}) where {T<:Unitful.Energy} = ustrip.(uconvert.(u"eV", value))
 _write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Energy} = ustrip.(uconvert.(u"eV",(hcat((value)...))))
+_write_convert(value::T) where {T<:Unitful.Momentum} = ustrip(uconvert(u"u*Å/(Å*sqrt(u/eV))", value))
+_write_convert(value::Vector{T}) where {T<:Unitful.Momentum} = ustrip.(uconvert.(u"u*Å/(Å*sqrt(u/eV))", value))
+_write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Momentum} = ustrip.(uconvert.(u"u*Å/(Å*sqrt(u/eV))",(hcat((value)...))))
+_write_convert(value::T) where {T<:Unitful.Force} = ustrip(uconvert(u"eV/Å", value))
+_write_convert(value::Vector{T}) where {T<:Unitful.Force} = ustrip.(uconvert.(u"eV/Å", value))
+_write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Force} = ustrip.(uconvert.(u"eV/Å",(hcat((value)...))))
+_write_convert(value::T) where {T<:Unitful.Pressure} = ustrip(uconvert(u"eV/Å^3", value))
+_write_convert(value::Vector{T}) where {T<:Unitful.Pressure} = ustrip.(uconvert.(u"eV/Å^3", value))
+_write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Pressure} = ustrip.(uconvert.(u"eV/Å^3",(hcat((value)...))))
 _write_convert(value::Vector{T}) where {T} = ustrip.(value)
 _write_convert(value::Vector{Vector{T}}) where {T} = ustrip.(hcat((value)...))
 _write_convert(value::Vector{Symbol}) = string.(value)
@@ -73,6 +86,9 @@ function Atoms(dict::Dict{String}{Any})
     atom_data = _dict_remap_fwd(dict["arrays"])
     natoms = dict["N_atoms"]
     atom_data[:positions] = [ atom_data[:positions][:, i] for i=1:natoms ].*u"Å" # from matrix to vector of vectors
+    if haskey(atom_data, :velocities) # add unit for velocities
+        atom_data[:velocities] = [ atom_data[:velocities][:, i] for i=1:natoms ].*u"Å/(Å*sqrt(u/eV))"
+    end
 
     if :atomic_symbols in keys(atom_data)
        sym = atom_data[:atomic_symbols] = Symbol.(atom_data[:atomic_symbols])
@@ -163,6 +179,11 @@ atomic_symbol(s::Atoms, i) = s.atom_data.atomic_symbols[i]
 atomic_number(s::Atoms, i) = s.atom_data.atomic_numbers[i]
 atomic_mass(s::Atoms, i)   = s.atom_data.atomic_masses[i]
 velocity(s::Atoms, i)      = s.atom_data.velocity[i]
+
+function Base.show(io::IO, system::Atoms)
+    print(io, "Atoms")
+    AtomsBase.show_system(io, system)
+end
 
 # --------- FileIO compatible interface (hence not exported)
 
