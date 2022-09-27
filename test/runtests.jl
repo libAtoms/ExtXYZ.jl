@@ -121,6 +121,7 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
             ExtXYZ.save(outfile, seq1)
             seq2 = ExtXYZ.load(outfile)
             @test all(seq1 .≈ seq2)
+            @test all(repr(seq1) == repr(seq2))
 
             @testset "AtomsBase unit_tests" begin
                 at = ExtXYZ.load(infile, 1)
