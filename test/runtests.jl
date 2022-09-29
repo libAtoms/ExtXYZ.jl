@@ -127,18 +127,20 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
                 at = ExtXYZ.load(infile, 1)
                 @test at ≈ seq1[1]
                 @test all(Test_Units.(vcat(seq1, seq2)))
-                atom_data = Dict(:positions => [[1,2,3],[2,3,4]]*u"Å", :velocities => [[3,4,5],[4,5,6]]*u"Å/(Å*sqrt(u/eV))", :atomic_numbers => [25, 25], :atomic_symbols => [:Mn, :Mn])
+                atom_data = Dict(:positions => [[1,2,3],[2,3,4]].*10^(-12)*u"m", :velocities => [[3,4,5],[4,5,6]]*u"Å/(Å*sqrt(u/eV))", :atomic_numbers => [25, 25], :atomic_symbols => [:Mn, :Mn])
                 system_data = Dict(:box => [[3,3,3],[4,4,4],[5,5,5]]*u"Å", :boundary_conditions => [Periodic(), Periodic(), Periodic()], 
-                :dft_energy => 10*u"eV", :Momentum => 11*u"u*Å/(Å*sqrt(u/eV))", :Force => 12*u"eV/Å", :Stress => 13*u"eV/Å^3")
+                :dft_energy => 10*u"eV", :Momentum => 11*u"u*Å/(Å*sqrt(u/eV))", :Force => 12*u"eV/Å", :Stress => [13,14]*u"eV/Å^3", :conv_vec => [10,11,12].*10^(-12)*u"m", :conv_val => 13*10^(-12)*u"m")
                 sys1 = Atoms(NamedTuple(atom_data), NamedTuple(system_data))
                 ExtXYZ.save(outfile, sys1)
                 sys2 = ExtXYZ.load(outfile)
-                @test(position(sys2) == [[1,2,3],[2,3,4]]*u"Å")
+                @test(position(sys2) == [[0.010,0.020,0.030],[0.020,0.030,0.040]]*u"Å")
                 @test(velocity(sys2) == [[3,4,5],[4,5,6]]*u"Å/(Å*sqrt(u/eV))")
                 @test(sys2.system_data[:dft_energy] == 10)
                 @test(sys2.system_data[:Momentum] == 11)
                 @test(sys2.system_data[:Force] == 12)
-                @test(sys2.system_data[:Stress] == 13)
+                @test(sys2.system_data[:Stress] == [13,14])
+                @test(sys2.system_data[:conv_vec] == [0.10, 0.11, 0.12])
+                @test(sys2.system_data[:conv_val] == 0.13)
             end
         end
 
