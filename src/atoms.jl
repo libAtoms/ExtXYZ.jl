@@ -51,6 +51,15 @@ _read_convert(value::Int32) = Int(value)
 _read_convert(value::Vector{Int32}) = Int.(value)
 
 _write_convert(value) = value
+_write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Quantity} = (_write_convert.(hcat((value)...)))
+_write_convert(value::Vector{T}) where {T<:Unitful.Quantity} = _write_convert.(value)
+_write_convert(value::T) where {T<:Unitful.Length} = ustrip(uconvert(u"Å", value))
+_write_convert(value::T) where {T<:Unitful.Velocity} = ustrip(uconvert(u"Å/(Å*sqrt(u/eV))", value))
+_write_convert(value::T) where {T<:Unitful.Mass} = ustrip(uconvert(u"u", value))
+_write_convert(value::T) where {T<:Unitful.Energy} = ustrip(uconvert(u"eV", value))
+_write_convert(value::T) where {T<:Unitful.Momentum} = ustrip(uconvert(u"u*Å/(Å*sqrt(u/eV))", value))
+_write_convert(value::T) where {T<:Unitful.Force} = ustrip(uconvert(u"eV/Å", value))
+_write_convert(value::T) where {T<:Unitful.Pressure} = ustrip(uconvert(u"eV/Å^3", value))
 _write_convert(value::Vector{T}) where {T} = ustrip.(value)
 _write_convert(value::Vector{Vector{T}}) where {T} = ustrip.(hcat((value)...))
 _write_convert(value::Vector{Symbol}) = string.(value)
@@ -64,7 +73,10 @@ _dict_remap_rev(d) = _dict_remap_names(d, REV_NAME_MAP, string, String, _write_c
 function Atoms(dict::Dict{String}{Any})
     atom_data = _dict_remap_fwd(dict["arrays"])
     natoms = dict["N_atoms"]
-    atom_data[:positions] = [ atom_data[:positions][:, i] for i=1:natoms ] # from matrix to vector of vectors
+    atom_data[:positions] = [ atom_data[:positions][:, i] for i=1:natoms ].*u"Å" # from matrix to vector of vectors
+    if haskey(atom_data, :velocities) # add unit for velocities
+        atom_data[:velocities] = [ atom_data[:velocities][:, i] for i=1:natoms ].*u"Å/(Å*sqrt(u/eV))"
+    end
 
     if :atomic_symbols in keys(atom_data)
        sym = atom_data[:atomic_symbols] = Symbol.(atom_data[:atomic_symbols])
@@ -77,13 +89,19 @@ function Atoms(dict::Dict{String}{Any})
     end
     atom_data[:atomic_numbers] === nothing && error("atomic numbers not defined - either 'Z' or 'species' must be present")
  
-    # mass - lookup from atomic number if not present
-    # if !haskey(atom_data, :atomic_masses)
-    #    atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass)
-    # end
+    # mass - lookup from atomic number if not present look up from atomic_symbols
+    if !haskey(atom_data, :atomic_masses)
+        if haskey(atom_data, :atomic_numbers)
+            atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass)
+        elseif haskey(atom_data, :atomic_symbols)
+            atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_symbols]], :atomic_mass)
+        end
+    else
+        atom_data[:atomic_masses] .* u"u"
+    end
   
     system_data = _dict_remap_fwd(dict["info"])
-    system_data[:box] = [dict["cell"][i, :] for i in 1:D ] # lattice vectors are rows from cell matrix
+    system_data[:box] = [dict["cell"][i, :] for i in 1:D ].*u"Å" # lattice vectors are rows from cell matrix
     pbc = get(dict, "pbc", [true, true, true]) # default to periodic in all directions
     system_data[:boundary_conditions] =[p ? Periodic() : DirichletZero() for p in pbc]
 
@@ -94,14 +112,20 @@ read_dict(dict::Dict{String}{Any}) = Atoms(dict)
 
 function write_dict(atoms::Atoms)
     system_data = Dict(pairs(atoms.system_data))
+    atom_data = Dict(pairs(atoms.atom_data))
+    if haskey(atom_data, :atomic_masses) 
+        if all(atom_data[:atomic_masses] .== getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass))
+            pop!(atom_data, :atomic_masses)
+        end
+    end
     bcs = pop!(system_data, :boundary_conditions)
     box = pop!(system_data, :box)
     dict = Dict(
         "N_atoms" => length(atoms),
-        "cell" => vcat(box'...),
+        "cell" => (_write_convert(box))',
         "pbc" => isequal.(bcs, [Periodic() for i=1:D]) |> Array,
         "info" => _dict_remap_rev(system_data),
-        "arrays" => _dict_remap_rev(atoms.atom_data))
+        "arrays" => _dict_remap_rev(atom_data))
     return dict
 end
 
@@ -144,6 +168,11 @@ atomic_number(s::Atoms, i) = s.atom_data.atomic_numbers[i]
 atomic_mass(s::Atoms, i)   = s.atom_data.atomic_masses[i]
 velocity(s::Atoms, i)      = s.atom_data.velocity[i]
 
+function Base.show(io::IO, system::Atoms)
+    print(io, "Atoms")
+    AtomsBase.show_system(io, system)
+end
+
 # --------- FileIO compatible interface (hence not exported)
 
 load(file::Union{String,IOStream}, frame; kwargs...) = Atoms(read_frame(file, frame; kwargs...))
@@ -160,3 +189,4 @@ end
 save(file::Union{String,IOStream}, system::Atoms; kwargs...) = write_frame(file, write_dict(system); kwargs...)
 
 save(file::Union{String,IOStream}, systems::Vector{Atoms{NT1,NT2}}; kwargs...) where {NT1,NT2} = write_frames(file, write_dict.(systems); kwargs...)
+save(file::Union{String,IOStream}, systems::Vector{Atoms}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
