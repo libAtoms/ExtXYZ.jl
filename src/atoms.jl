@@ -160,13 +160,14 @@ position(s::Atoms)       = s.atom_data.positions
 atomic_symbol(s::Atoms)  = s.atom_data.atomic_symbols
 atomic_number(s::Atoms)  = s.atom_data.atomic_numbers
 atomic_mass(s::Atoms)    = s.atom_data.atomic_masses
-velocity(s::Atoms)       = s.atom_data.velocities
+velocity(s::Atoms)       = haskey(s.atom_data, :velocities) ? s.atom_data.velocities : missing
 
 position(s::Atoms, i)      = s.atom_data.positions[i]
 atomic_symbol(s::Atoms, i) = s.atom_data.atomic_symbols[i]
 atomic_number(s::Atoms, i) = s.atom_data.atomic_numbers[i]
 atomic_mass(s::Atoms, i)   = s.atom_data.atomic_masses[i]
-velocity(s::Atoms, i)      = s.atom_data.velocity[i]
+#Double Check
+velocity(s::Atoms, i)      = haskey(s.atom_data, :velocities) ? s.atom_data.velocities[i] : missing
 
 function Base.show(io::IO, system::Atoms)
     print(io, "Atoms")
