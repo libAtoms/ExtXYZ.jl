@@ -166,7 +166,6 @@ position(s::Atoms, i)      = s.atom_data.positions[i]
 atomic_symbol(s::Atoms, i) = s.atom_data.atomic_symbols[i]
 atomic_number(s::Atoms, i) = s.atom_data.atomic_numbers[i]
 atomic_mass(s::Atoms, i)   = s.atom_data.atomic_masses[i]
-#Double Check
 velocity(s::Atoms, i)      = haskey(s.atom_data, :velocities) ? s.atom_data.velocities[i] : missing
 
 function Base.show(io::IO, system::Atoms)
