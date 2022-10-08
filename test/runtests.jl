@@ -141,6 +141,14 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
                 @test(sys2.system_data[:Stress] == [13,14])
                 @test(sys2.system_data[:conv_vec] == [0.10, 0.11, 0.12])
                 @test(sys2.system_data[:conv_val] == 0.13)
+                #Test without velocities
+                atom_data = Dict(:positions => [[1,2,3],[2,3,4]].*10^(-12)*u"m", :atomic_numbers => [25, 25], :atomic_symbols => [:Mn, :Mn])
+                sys1 = Atoms(NamedTuple(atom_data), NamedTuple(system_data))
+                ExtXYZ.save(outfile, sys1)
+                sys2 = ExtXYZ.load(outfile)
+                @test(ismissing(velocity(sys2)))
+                @test(ismissing(velocity(sys2[1])))
+                @test(ismissing(velocity(sys2, 1)))
             end
         end
 
