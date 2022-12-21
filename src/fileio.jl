@@ -5,10 +5,13 @@ cfopen(filename::String, mode::String) = ccall(:fopen,
                                                (Cstring, Cstring),
                                                filename, mode)
                                                 
-cfclose(fp::Ptr{Cvoid}) = ccall(:fclose,
-                                Cint,
-                                (Ptr{Cvoid},),
-                                fp)
+function cfclose(fp::Ptr{Cvoid}) 
+    (fp == C_NULL) && return
+    ccall(:fclose,
+          Cint,
+          (Ptr{Cvoid},),
+          fp)
+end
 
 function cfopen(f::Function, iostream::IOStream, mode::String="r")
     newfd = Libc.dup(RawFD(fd(iostream)))
