@@ -117,14 +117,7 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
         end
 
         @testset "missingfile" begin
-            try
-                read_frame("bla.extxyz")
-            catch e
-                buf = IOBuffer()
-                showerror(buf, e)
-                message = String(take!(buf))
-                @test message == "file bla.extxyz cannot be opened for reading"
-            end
+            @test_throws "file bla.extxyz cannot be opened for reading" read_frame("bla.extxyz")
         end
 
         @testset "AtomsBase" begin
