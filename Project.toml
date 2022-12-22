@@ -1,7 +1,7 @@
 name = "ExtXYZ"
 uuid = "352459e4-ddd7-4360-8937-99dcb397b478"
 authors = ["James Kermode <J.R.Kermode@warwick.ac.uk> and contributors"]
-version = "0.1.9"
+version = "0.1.10-DEV"
 
 [deps]
 AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
