@@ -1,6 +1,6 @@
 # ExtXYZ.jl
 
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/libAtoms/ExtXYZ.jl/CI) [![docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://libAtoms.github.io/ExtXYZ.jl/dev) [![docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://libatoms.github.io/ExtXYZ.jl/stable)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/libAtoms/ExtXYZ.jl/CI.yml?branch=master) [![docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://libAtoms.github.io/ExtXYZ.jl/dev) [![docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://libatoms.github.io/ExtXYZ.jl/stable)
 
 This package provides Julia bindings for the [extxyz](https://github.com/libAtoms/extxyz) C library which implements a parser and writer for the extended XYZ file format used in materials and molecular modelling, following the [specification](https://github.com/libAtoms/extxyz#extended-xyz-specification-and-parsing-tools) set out in the extxyz repo.
 
