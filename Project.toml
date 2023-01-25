@@ -12,7 +12,7 @@ extxyz_jll = "6ecdc6fc-93a8-5528-aee3-ac7ae1c60be7"
 
 [compat]
 julia = "1"
-AtomsBase = "0.2"
+AtomsBase = "0.3"
 PeriodicTable = "1"
 StaticArrays = "1.5"
 Unitful = "1"
