@@ -1,5 +1,6 @@
 using AtomsBase
 using Unitful
+using UnitfulAtomic
 
 export Atoms
 
@@ -19,7 +20,7 @@ end
 # outward facing constructor
 function Atoms(atom_data::NT1, system_data::NT2) where {NT1 <: NamedTuple, NT2 <: NamedTuple}
     # Check on required properties
-    for sym in (:positions, :atomic_numbers)
+    for sym in (:position, :atomic_number)
         sym ∉ keys(atom_data) && error("Required per-atom symbol '$sym' missing in call to constructor")
     end
     for sym in (:bounding_box, :boundary_conditions)
@@ -29,25 +30,24 @@ function Atoms(atom_data::NT1, system_data::NT2) where {NT1 <: NamedTuple, NT2 <
 end
 
 Atoms(atoms::Atoms) = Atoms(atoms.atom_data, atoms.system_data)
-function Atoms(system::AbstractSystem{3})
+function Atoms(system::AbstractSystem{D})
     n_atoms = length(system)
-    atomic_symbols = [Symbol(PeriodicTable.elements[atomic_number(at)].symbol)
-                      for at in system]
+    atomic_symbols = [Symbol(element(atomic_number(at)).symbol) for at in system]
     if atomic_symbols != atomic_symbol(system)
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
     atom_data = Dict{Symbol,Any}(
-        :atomic_symbols => atomic_symbols,
-        :atomic_numbers => atomic_number(system),
-        :atomic_masses  => atomic_mass(system)
+        :atomic_symbol => atomic_symbols,
+        :atomic_number => atomic_number(system),
+        :atomic_mass   => atomic_mass(system)
     )
-    atom_data[:positions] = map(1:n_atoms) do at
+    atom_data[:position] = map(1:n_atoms) do at
         pos = zeros(3)u"Å"
         pos[1:D] = position(system, at)
         pos
     end
-    atom_data[:velocities] = map(1:n_atoms) do at
+    atom_data[:velocity] = map(1:n_atoms) do at
         vel = zeros(3)u"Å/s"
         if !ismissing(velocity(system)) && !ismissing(velocity(system, at))
             vel[1:D] = velocity(system, at)
@@ -107,7 +107,7 @@ function Atoms(dict::Dict{String, Any})
     if haskey(arrays, "Z")
         Z = Int.(arrays["Z"])
     elseif haskey(arrays, "species")
-        Z = [PeriodicTable.elements[Symbol(spec)].number for spec in arrays["species"]]
+        Z = [element(Symbol(spec)).number for spec in arrays["species"]]
     else
         error("Cannot determine atomic numbers. Either 'Z' or 'species' must " *
               "be present in arrays")
@@ -126,7 +126,7 @@ function Atoms(dict::Dict{String, Any})
     if haskey(arrays, "mass")
         atom_data[:atomic_mass] = arrays["mass"]u"u"
     else
-        atom_data[:atomic_mass] = [PeriodicTable.elements[num].atomic_mass for num in Z]
+        atom_data[:atomic_mass] = [element(num).atomic_mass for num in Z]
     end
     if haskey(arrays, "velocities")
         atom_data[:velocity] = collect(eachcol(arrays["velocities"]))u"Å/s"
@@ -184,7 +184,7 @@ function write_dict(atoms::Atoms)
         end
     end
     arrays["pos"] = zeros(D, length(atoms))
-    for (i, position) in enumerate(atoms.atom_data.positions)
+    for (i, position) in enumerate(atoms.atom_data.position)
         arrays["pos"][:, i] = ustrip.(u"Å", position)
     end
 
@@ -228,29 +228,31 @@ end
 
 # --------- AtomsBase interface
 
-Base.length(sys::Atoms)         = length(sys.atom_data.positions)
-Base.size(sys::Atoms)           = size(sys.atom_data.positions)
+Base.length(sys::Atoms) = length(sys.atom_data.position)
+Base.size(sys::Atoms)   = size(sys.atom_data.position)
 AtomsBase.bounding_box(sys::Atoms) = sys.system_data.bounding_box
 AtomsBase.boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
 
 AtomsBase.species_type(::FS) where {FS <: Atoms} = AtomView{FS}
-Base.getindex(sys::Atoms, x::Symbol) = getkey(sys.system_data, x)
-Base.haskey(sys::Atoms, x::Symbol) = haskey(sys.system_data, x)
-Base.keys(sys::Atom) = keys(sys.system_data)
+Base.getindex(sys::Atoms, x::Symbol) = getindex(sys.system_data, x)
+Base.haskey(sys::Atoms, x::Symbol)   = haskey(sys.system_data, x)
+Base.keys(sys::Atoms) = keys(sys.system_data)
 
 Base.getindex(sys::Atoms, i::Integer) = AtomView(sys, i)
-Base.getindex(sys::Atoms, i::Integer, x::Symbol) = getkey(sys.atom_data, x)[i]
-Base.getindex(sys::Atoms, ::Colon, x::Symbol) = getkey(sys.atom_data, x)
+Base.getindex(sys::Atoms, i::Integer, x::Symbol) = getindex(sys.atom_data, x)[i]
+Base.getindex(sys::Atoms, ::Colon,    x::Symbol) = getindex(sys.atom_data, x)
 
 AtomsBase.atomkeys(sys::Atoms) = keys(sys.atom_data)
 AtomsBase.hasatomkey(sys::Atoms, x::Symbol) = haskey(sys.atom_data, x)
 
-for key in (:position, :atomic_symbol, :atomic_number, :atomic_mass)
-    @eval begin
-        AtomsBase.$key(s::Atoms) = Base.getindex(s, :, key)
-        AtomsBase.$key(s::Atoms, i::Integer) = Base.getindex(s, i, key)
-    end
-end
+AtomsBase.position(s::Atoms)             = Base.getindex(s, :, :position)
+AtomsBase.position(s::Atoms, i::Integer) = Base.getindex(s, i, :position)
+AtomsBase.atomic_mass(s::Atoms)             = Base.getindex(s, :, :atomic_mass)
+AtomsBase.atomic_mass(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_mass)
+AtomsBase.atomic_symbol(s::Atoms)             = Base.getindex(s, :, :atomic_symbol)
+AtomsBase.atomic_symbol(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_symbol)
+AtomsBase.atomic_number(s::Atoms)             = Base.getindex(s, :, :atomic_number)
+AtomsBase.atomic_number(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_number)
 
 AtomsBase.velocity(s::Atoms) = getkey(s.atom_data, :velocity, missing)
 function AtomsBase.velocity(s::Atoms, i::Integer)
