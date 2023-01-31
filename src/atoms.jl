@@ -226,7 +226,7 @@ write_dict(system::AbstractSystem{D}) = write_dict(Atoms(system))
 # --------- AtomsBase interface
 
 Base.length(sys::Atoms) = length(sys.atom_data.position)
-Base.size(sys::Atoms)   = size(sys.atom_data.position)
+Base.size(sys::Atoms)   = (length(sys), )
 AtomsBase.bounding_box(sys::Atoms) = sys.system_data.bounding_box
 AtomsBase.boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
 

@@ -16,6 +16,7 @@ function test_approx_eq(s::AbstractSystem, t::AbstractSystem; atol=1e-14,
     # TODO Introduce an == / ≈ method in AbstractSystem for this purpose
 
     @test maximum(norm, position(s)     - position(t))     < atol * u"Å"
+    @test maximum(norm, position(s, 1)  - position(t, 1))  < atol * u"Å"
     @test maximum(norm, bounding_box(s) - bounding_box(t)) < atol * u"Å"
 
     if !(:velocity in ignore_atprop)
@@ -23,12 +24,19 @@ function test_approx_eq(s::AbstractSystem, t::AbstractSystem; atol=1e-14,
         if !ismissing(velocity(s)) && !ismissing(velocity(t))
             @test maximum(norm, velocity(s) - velocity(t)) < atol * u"Å/s"
         end
+        @test maximum(norm, velocity(s, 1) - velocity(t, 1)) < atol * u"Å/s"
     end
 
-    for method in (atomic_symbol, atomic_number, boundary_conditions)
+    for method in (length, size, boundary_conditions)
         @test method(s) == method(t)
     end
-    @test maximum(abs, atomic_mass(s) - atomic_mass(t)) < atol * u"u"
+
+    for method in (atomic_symbol, atomic_number)
+        @test method(s)    == method(t)
+        @test method(s, 1) == method(t, 1)
+    end
+    @test maximum(abs, atomic_mass(s)    - atomic_mass(t))    < atol * u"u"
+    @test maximum(abs, atomic_mass(s, 1) - atomic_mass(t, 1)) < atol * u"u"
 
     extra_atomic_props = (:charge, :covalent_radius, :vdw_radius, :magnetic_moment)
     for prop in Set([atomkeys(s)..., atomkeys(t)..., extra_atomic_props...])
