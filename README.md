@@ -2,7 +2,7 @@
 
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/libAtoms/ExtXYZ.jl/CI.yml?branch=master) [![docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://libAtoms.github.io/ExtXYZ.jl/dev) [![docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://libatoms.github.io/ExtXYZ.jl/stable)
 
-This package provides Julia bindings for the [extxyz](https://github.com/libAtoms/extxyz) C library which implements a parser and writer for the extended XYZ file format used in materials and molecular modelling, following the [specification](https://github.com/libAtoms/extxyz#extended-xyz-specification-and-parsing-tools) set out in the extxyz repo.
+This package provides Julia bindings for the [extxyz](https://github.com/libAtoms/extxyz) C library which implements a parser and writer for the extended XYZ file format used in materials and molecular modelling, following the [specification](https://github.com/libAtoms/extxyz#extended-xyz-specification-and-parsing-tools) set out in the extxyz repo. Moreover the `ExtXYZ.Atoms` object directly adheres to the [AtomsBase](https://github.com/JuliaMolSim/AtomsBase.jl) common interface for atomistic structures.
 
 **Maintainer:** James Kermode ([@jameskermode](https://github.com/jameskermode)).
 
@@ -22,13 +22,15 @@ pkg> dev https://github.com/libAtoms/ExtXYZ.jl
 
 ## Related packages
 
-The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files to/from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
+- The [JuLIP.jl](https://github.com/JuliaMolSim/JuLIP.jl) package is an optional - but recommended - companion. JuLIP can use `ExtXYZ.jl` to read and write extended XYZ files to/from `JuLIP.Atoms` instances, using the functions `JuLIP.read_extxyz()` and `JuLIP.write_extxyz()`.
+- The package is integrated with [AtomsIO.jl](https://github.com/mfherbst/AtomsIO.jl) to provide a uniform interface (based on [AtomsBase](https://github.com/JuliaMolSim/AtomsBase.jl)) for reading and writing a large range of atomistic structure files.
 
 Please open issues/PRs here with suggestions of other packages it would be useful to provide interfaces to.
 
 ## Basic Usage
 
-Four key functions are exported: `read_frame()` and `write_frame()` for reading and writing single configurations (snapshots), respectively, and `read_frames()` and `write_frames()` for reading and writing trajectories. All functions can work with string filenames, an open `Base.IO` instance or (intended primarily for internal use) a C `FILE*` pointer, stored as a `Ptr{Cvoid}` type.
+Four key functions are exported: `read_frame()` and `write_frame()` for reading and writing single configurations (snapshots), respectively, and `read_frames()` and `write_frames()` for reading and writing trajectories. Moreover `ExtXYZ.Atoms` provides a datastructure to expose the read configurations in an [AtomsBase](https://github.com/JuliaMolSim/AtomsBase.jl)-compatible manner.
+All read and write functions can work with string filenames, an open `Base.IO` instance or (intended primarily for internal use) a C `FILE*` pointer, stored as a `Ptr{Cvoid}` type.
 
 ```julia
 using ExtXYZ
@@ -42,6 +44,12 @@ all_frames = read_frames("seq.xyz")  # read all frames, returns Vector{Dict{Stri
 frames = read_frames("seq.xyz", 1:4) # specific range of frames
 
 write_frames("output.xyz", frames, append=true) # append four frames to output
+
+# Get a frame as AtomsBase-compatible ExtXYZ.Atoms object:
+Atoms(read_frame("input.xyz"))
+
+# Get list of frames as AtomsBase-compatible ExtXYZ.Atoms object:
+Atoms.(read_frames("seq.xyz", 1:4)
 ```
 
 The function `iread_frames()` provides lazy file-reading using a `Channel`:
