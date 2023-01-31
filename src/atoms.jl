@@ -17,19 +17,6 @@ struct Atoms{P <: NamedTuple, Q <: NamedTuple} <: AbstractSystem{D}
     system_data::Q
 end
 
-# outward facing constructor
-function Atoms(atom_data::NT1, system_data::NT2) where {NT1 <: NamedTuple, NT2 <: NamedTuple}
-    # Check on required properties
-    for sym in (:position, :atomic_number)
-        sym ∉ keys(atom_data) && error("Required per-atom symbol '$sym' missing in call to constructor")
-    end
-    for sym in (:bounding_box, :boundary_conditions)
-        sym ∉ keys(system_data) && error("Required per-system symbol '$sym' missing in call to constructor")
-    end
-    Atoms{NT1, NT2}(atom_data, system_data)
-end
-
-Atoms(atoms::Atoms) = Atoms(atoms.atom_data, atoms.system_data)
 function Atoms(system::AbstractSystem{D})
     n_atoms = length(system)
     atomic_symbols = [Symbol(element(atomic_number(at)).symbol) for at in system]
@@ -67,8 +54,10 @@ function Atoms(system::AbstractSystem{D})
             # across all of AtomsBase or the value has a type that Extxyz can write
             # losslessly, so we can just write them no matter the value
             atom_data[k] = system[:, k]
+        elseif v isa Quantity || (v isa AbstractArray && eltype(v) <: Quantity)
+            @warn "Unitful quantity $k is not yet supported in ExtXYZ."
         else
-            @warn "Writing quantities of type $(typeof(v)) is not supported in convert_extxyz."
+            @warn "Writing quantities of type $(typeof(v)) is not supported in ExtXYZ."
         end
     end
 
@@ -91,8 +80,10 @@ function Atoms(system::AbstractSystem{D})
             # across all of AtomsBase or the value has a type that Extxyz can write
             # losslessly, so we can just write them no matter the value
             system_data[k] = v
+        elseif v isa Quantity || (v isa AbstractArray && eltype(v) <: Quantity)
+            @warn "Unitful quantity $k is not yet supported in ExtXYZ."
         else
-            @warn "Writing quantities of type $(typeof(v)) is not supported in convert_extxyz."
+            @warn "Writing quantities of type $(typeof(v)) is not supported in ExtXYZ."
         end
     end
 
@@ -130,6 +121,8 @@ function Atoms(dict::Dict{String, Any})
     end
     if haskey(arrays, "velocities")
         atom_data[:velocity] = collect(eachcol(arrays["velocities"]))u"Å/s"
+    else
+        atom_data[:velocity] = [zeros(3)u"Å/s" for _ in 1:Z]
     end
 
     for key in keys(arrays)
@@ -160,9 +153,9 @@ function Atoms(dict::Dict{String, Any})
         end
     end
 
-    ExtXYZ.Atoms(NamedTuple(atom_data), NamedTuple(system_data))
+    Atoms(NamedTuple(atom_data), NamedTuple(system_data))
 end
-read_dict(dict::Dict{String, Any}) = Atoms(dict)
+read_dict(dict::Dict{String,Any}) = Atoms(dict)
 
 function write_dict(atoms::Atoms)
     arrays = Dict{String,Any}()
@@ -178,10 +171,8 @@ function write_dict(atoms::Atoms)
     end
 
     arrays["velocities"] = zeros(D, length(atoms))
-    if haskey(atoms.atom_data, :velocity)
-        for (i, velocity) in enumerate(atoms.atom_data.velocity)
-            arrays["velocities"][:, i] = ustrip.(u"Å/s", velocity)
-        end
+    for (i, velocity) in enumerate(atoms.atom_data.velocity)
+        arrays["velocities"][:, i] = ustrip.(u"Å/s", velocity)
     end
     arrays["pos"] = zeros(D, length(atoms))
     for (i, position) in enumerate(atoms.atom_data.position)
@@ -189,22 +180,25 @@ function write_dict(atoms::Atoms)
     end
 
     for (k, v) in pairs(atoms.atom_data)
-        k in (:atomic_mass, :atomic_species, :atomic_number, :position, :velocity) && continue
+        k in (:atomic_mass, :atomic_symbol, :atomic_number, :position, :velocity) && continue
         if k in (:vdw_radius, :covalent_radius)  # Remove length unit
             arrays[string(k)] = ustrip.(u"Å", v)
         elseif k in (:charge, )
             arrays[string(k)] = ustrip.(u"e_au", v)
-        elseif v isa ExtxyzType
-            arrays[string(k)] = v
+        elseif v isa AbstractVector{<:ExtxyzType}
+            arrays[string(k)] = v  # These can be written losslessly
         else
             @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
         end
     end
 
-    pbc  = [bc isa Periodic for bc in atoms.system_data.boundary_conditions]
+    pbc = zeros(Bool, D)
+    for (i, bc) in enumerate(atoms.system_data.boundary_conditions)
+        pbc[i] = bc isa Periodic
+    end
     cell = zeros(D, D)
-    for bvector in atoms.system_data.bounding_box
-        cell[i, :] = austrip(u"Å", bvector)
+    for (i, bvector) in enumerate(atoms.system_data.bounding_box)
+        cell[i, :] = ustrip.(u"Å", bvector)
     end
 
     # Deal with other system keys
@@ -214,7 +208,9 @@ function write_dict(atoms::Atoms)
         if k in (:charge, )
             info[string(k)] = ustrip(u"e_au", atoms.system_data[k])
         elseif v isa ExtxyzType
-            info[string(k)] = v  # These are directly supported to be written losslessly
+            info[string(k)] = v
+        elseif v isa AbstractArray{<:ExtxyzType}
+            info[string(k)] = convert(Array, v)
         else
             @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
         end
@@ -225,6 +221,7 @@ function write_dict(atoms::Atoms)
          "info"    => info,
          "arrays"  => arrays)
 end
+write_dict(system::AbstractSystem{D}) = write_dict(Atoms(system))
 
 # --------- AtomsBase interface
 
@@ -245,19 +242,16 @@ Base.getindex(sys::Atoms, ::Colon,    x::Symbol) = getindex(sys.atom_data, x)
 AtomsBase.atomkeys(sys::Atoms) = keys(sys.atom_data)
 AtomsBase.hasatomkey(sys::Atoms, x::Symbol) = haskey(sys.atom_data, x)
 
-AtomsBase.position(s::Atoms)             = Base.getindex(s, :, :position)
-AtomsBase.position(s::Atoms, i::Integer) = Base.getindex(s, i, :position)
-AtomsBase.atomic_mass(s::Atoms)             = Base.getindex(s, :, :atomic_mass)
-AtomsBase.atomic_mass(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_mass)
+AtomsBase.position(s::Atoms)                  = Base.getindex(s, :, :position)
+AtomsBase.position(s::Atoms, i::Integer)      = Base.getindex(s, i, :position)
+AtomsBase.velocity(s::Atoms)                  = Base.getindex(s, :, :velocity)
+AtomsBase.velocity(s::Atoms, i::Integer)      = Base.getindex(s, i, :velocity)
+AtomsBase.atomic_mass(s::Atoms)               = Base.getindex(s, :, :atomic_mass)
+AtomsBase.atomic_mass(s::Atoms, i::Integer)   = Base.getindex(s, i, :atomic_mass)
 AtomsBase.atomic_symbol(s::Atoms)             = Base.getindex(s, :, :atomic_symbol)
 AtomsBase.atomic_symbol(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_symbol)
 AtomsBase.atomic_number(s::Atoms)             = Base.getindex(s, :, :atomic_number)
 AtomsBase.atomic_number(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_number)
-
-AtomsBase.velocity(s::Atoms) = getkey(s.atom_data, :velocity, missing)
-function AtomsBase.velocity(s::Atoms, i::Integer)
-    haskey(s.atom_data, :velocities) ? s.atom_data.velocities[i] : missing
-end
 
 # --------- FileIO compatible interface (hence not exported)
 
@@ -272,7 +266,5 @@ function load(file::Union{String,IOStream}; kwargs...)
     end
 end
 
-save(file::Union{String,IOStream}, system::Atoms; kwargs...) = write_frame(file, write_dict(system); kwargs...)
-
-save(file::Union{String,IOStream}, systems::Vector{Atoms{NT1,NT2}}; kwargs...) where {NT1,NT2} = write_frames(file, write_dict.(systems); kwargs...)
-save(file::Union{String,IOStream}, systems::Vector{Atoms}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
+save(file::Union{String,IOStream}, system::AbstractSystem; kwargs...) = write_frame(file, write_dict(system); kwargs...)
+save(file::Union{String,IOStream}, systems::AbstractVector{<: AbstractSystem}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
