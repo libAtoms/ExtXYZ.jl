@@ -9,6 +9,10 @@ const D = 3 # TODO generalise to arbitrary spatial dimensions
 # Types supported in the ExtXYZ C layer
 const ExtxyzType = Union{Integer, AbstractFloat, AbstractString}
 
+# ExtXYZ uses ASE units, see https://wiki.fysik.dtu.dk/ase/ase/units.html
+# In particular note that uTime = u"Å" * sqrt(u"u" / u"eV") and thus
+const uVelocity = sqrt(u"eV" / u"u")
+
 """
 `struct Atoms` is the main type for flexible systems of atoms
 """
@@ -35,7 +39,7 @@ function Atoms(system::AbstractSystem{D})
         pos
     end
     atom_data[:velocity] = map(1:n_atoms) do at
-        vel = zeros(3)u"Å/s"
+        vel = zeros(3) * uVelocity
         if !ismissing(velocity(system)) && !ismissing(velocity(system, at))
             vel[1:D] = velocity(system, at)
         end
@@ -120,9 +124,9 @@ function Atoms(dict::Dict{String, Any})
         atom_data[:atomic_mass] = [element(num).atomic_mass for num in Z]
     end
     if haskey(arrays, "velocities")
-        atom_data[:velocity] = collect(eachcol(arrays["velocities"]))u"Å/s"
+        atom_data[:velocity] = collect(eachcol(arrays["velocities"])) * uVelocity
     else
-        atom_data[:velocity] = [zeros(3)u"Å/s" for _ in 1:Z]
+        atom_data[:velocity] = [zeros(3) * uVelocity for _ in 1:Z]
     end
 
     for key in keys(arrays)
@@ -172,7 +176,7 @@ function write_dict(atoms::Atoms)
 
     arrays["velocities"] = zeros(D, length(atoms))
     for (i, velocity) in enumerate(atoms.atom_data.velocity)
-        arrays["velocities"][:, i] = ustrip.(u"Å/s", velocity)
+        arrays["velocities"][:, i] = ustrip.(uVelocity, velocity)
     end
     arrays["pos"] = zeros(D, length(atoms))
     for (i, position) in enumerate(atoms.atom_data.position)

@@ -32,7 +32,8 @@ end
     @test arrays["species"]    == string.(atprop.atomic_symbol)
     @test arrays["mass"]       == ustrip.(u"u",   atprop.atomic_mass)
     @test arrays["pos"]        ≈  ustrip.(u"Å",   hcat(atprop.position...)) atol=1e-10
-    @test arrays["velocities"] ≈  ustrip.(u"Å/s", hcat(atprop.velocity...)) atol=1e-10
+    @test arrays["velocities"] ≈  ustrip.(sqrt(u"eV"/u"u"),
+                                          hcat(atprop.velocity...)) atol=1e-10
 
     expected_atkeys = ["Z", "charge", "covalent_radius", "magnetic_moment",
                        "mass", "pos", "species", "vdw_radius", "velocities"]
@@ -70,5 +71,5 @@ end
         ExtXYZ.save(outfile, system)
         ExtXYZ.load(outfile)::AbstractSystem
     end
-    test_approx_eq(system, io_system; atol=1e-8)
+    test_approx_eq(system, io_system; rtol=1e-6)
 end
