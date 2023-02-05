@@ -1,177 +1,261 @@
 using AtomsBase
-using PeriodicTable
-using StaticArrays
 using Unitful
-
-import Base: keys, getproperty, getindex, getfield, show, length, size, isapprox
-import AtomsBase: bounding_box, boundary_conditions, species_type, position, atomic_symbol, atomic_number, atomic_mass, velocity
-
-const D = 3 # TODO generalise to arbitrary spatial dimensions
-const REQUIRED_PER_ATOM_SYMS = [:positions, :atomic_symbols, :atomic_numbers]
-const REQUIRED_PER_SYSTEM_SYMS = [:box, :boundary_conditions]
-
-const NAME_MAP = Base.ImmutableDict("pos" => "positions",
-                                    "species" => "atomic_symbols",
-                                     "Z" => "atomic_numbers",
-                                     "mass" => "atomic_masses")
-const REV_NAME_MAP = Base.ImmutableDict([value => key for (key, value) in NAME_MAP]...)
+using UnitfulAtomic
 
 export Atoms
+
+const D = 3 # TODO generalise to arbitrary spatial dimensions
+
+# Types supported in the ExtXYZ C layer
+const ExtxyzType = Union{Integer, AbstractFloat, AbstractString}
+
+# ExtXYZ uses ASE units, see https://wiki.fysik.dtu.dk/ase/ase/units.html
+# In particular note that uTime = u"Å" * sqrt(u"u" / u"eV") and thus
+const uVelocity = sqrt(u"eV" / u"u")
 
 """
 `struct Atoms` is the main type for flexible systems of atoms
 """
-# TODO: add paramteric entries for length and mass units
-struct Atoms{P <: NamedTuple, Q <: NamedTuple} <: AbstractSystem{D} 
+struct Atoms{P <: NamedTuple, Q <: NamedTuple} <: AbstractSystem{D}
     atom_data::P
     system_data::Q
-
-    # standard constructor - SYMS are the same 
-    function Atoms{P, Q}(p::NT1, q::NT2) where {P <: NamedTuple{PSYMS}, NT1 <: NamedTuple{PSYMS}, 
-                                                Q <: NamedTuple{QSYMS}, NT2 <: NamedTuple{QSYMS}} where {PSYMS, QSYMS}
-        for sym in REQUIRED_PER_ATOM_SYMS
-            sym ∉ PSYMS && error("Required per-atom symbol '$sym' missing in call to constructor")
-            # TODO: add type checking for required symbols?
-        end
-        for sym in REQUIRED_PER_SYSTEM_SYMS
-            sym ∉ QSYMS && error("Required per-system symbol '$sym' missing in call to constructor")
-            # TODO: add type checking for required symbols?
-        end
-        new{NT1,NT2}(p, q)
-    end
 end
 
-# outward facing constructor
-Atoms(atom_data::NT1, system_data::NT2) where {NT1 <: NamedTuple, NT2 <: NamedTuple} = Atoms{NT1, NT2}(atom_data, system_data)
-
-# ----------- conversion to/from dictionaries
-
-_read_convert(value) = value
-_read_convert(value::Int32) = Int(value)
-_read_convert(value::Vector{Int32}) = Int.(value)
-
-_write_convert(value) = value
-_write_convert(value::Vector{Vector{T}}) where {T<:Unitful.Quantity} = (_write_convert.(hcat((value)...)))
-_write_convert(value::Vector{T}) where {T<:Unitful.Quantity} = _write_convert.(value)
-_write_convert(value::T) where {T<:Unitful.Length} = ustrip(uconvert(u"Å", value))
-_write_convert(value::T) where {T<:Unitful.Velocity} = ustrip(uconvert(u"Å/(Å*sqrt(u/eV))", value))
-_write_convert(value::T) where {T<:Unitful.Mass} = ustrip(uconvert(u"u", value))
-_write_convert(value::T) where {T<:Unitful.Energy} = ustrip(uconvert(u"eV", value))
-_write_convert(value::T) where {T<:Unitful.Momentum} = ustrip(uconvert(u"u*Å/(Å*sqrt(u/eV))", value))
-_write_convert(value::T) where {T<:Unitful.Force} = ustrip(uconvert(u"eV/Å", value))
-_write_convert(value::T) where {T<:Unitful.Pressure} = ustrip(uconvert(u"eV/Å^3", value))
-_write_convert(value::Vector{T}) where {T} = ustrip.(value)
-_write_convert(value::Vector{Vector{T}}) where {T} = ustrip.(hcat((value)...))
-_write_convert(value::Vector{Symbol}) = string.(value)
-_write_convert(value::Symbol) = string(value)
-
-_dict_remap_names(d, names, pre, post, conv) = Dict{post}{Any}(post(get(names, pre(key), pre(key))) => conv(value) for (key, value) in pairs(d))
-_dict_remap_fwd(d) = _dict_remap_names(d, NAME_MAP, identity, Symbol, _read_convert)
-_dict_remap_rev(d) = _dict_remap_names(d, REV_NAME_MAP, string, String, _write_convert)
-
-# read from dictionary of results as returned by read_frame()
-function Atoms(dict::Dict{String}{Any})
-    atom_data = _dict_remap_fwd(dict["arrays"])
-    natoms = dict["N_atoms"]
-    atom_data[:positions] = [ atom_data[:positions][:, i] for i=1:natoms ].*u"Å" # from matrix to vector of vectors
-    if haskey(atom_data, :velocities) # add unit for velocities
-        atom_data[:velocities] = [ atom_data[:velocities][:, i] for i=1:natoms ].*u"Å/(Å*sqrt(u/eV))"
+function Atoms(system::AbstractSystem{D})
+    n_atoms = length(system)
+    atomic_symbols = [Symbol(element(atomic_number(at)).symbol) for at in system]
+    if atomic_symbols != atomic_symbol(system)
+        @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
+              "in ExtXYZ. Atomic numbers take preference.")
     end
-
-    if :atomic_symbols in keys(atom_data)
-       sym = atom_data[:atomic_symbols] = Symbol.(atom_data[:atomic_symbols])
-       Z = getfield.(elements[sym], :number)
-       if haskey(atom_data, :atomic_numbers)
-          all(atom_data[:atomic_numbers] .== Z) || error("inconsistent 'Z' and 'species' properties")
-       else
-          atom_data[:atomic_numbers] = Z
-       end
+    atom_data = Dict{Symbol,Any}(
+        :atomic_symbol => atomic_symbols,
+        :atomic_number => atomic_number(system),
+        :atomic_mass   => atomic_mass(system)
+    )
+    atom_data[:position] = map(1:n_atoms) do at
+        pos = zeros(3)u"Å"
+        pos[1:D] = position(system, at)
+        pos
     end
-    atom_data[:atomic_numbers] === nothing && error("atomic numbers not defined - either 'Z' or 'species' must be present")
- 
-    # mass - lookup from atomic number if not present look up from atomic_symbols
-    if !haskey(atom_data, :atomic_masses)
-        if haskey(atom_data, :atomic_numbers)
-            atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass)
-        elseif haskey(atom_data, :atomic_symbols)
-            atom_data[:atomic_masses] = getfield.(elements[atom_data[:atomic_symbols]], :atomic_mass)
+    atom_data[:velocity] = map(1:n_atoms) do at
+        vel = zeros(3) * uVelocity
+        if !ismissing(velocity(system)) && !ismissing(velocity(system, at))
+            vel[1:D] = velocity(system, at)
         end
-    else
-        atom_data[:atomic_masses] .* u"u"
+        vel
     end
-  
-    system_data = _dict_remap_fwd(dict["info"])
-    system_data[:box] = [dict["cell"][i, :] for i in 1:D ].*u"Å" # lattice vectors are rows from cell matrix
-    pbc = get(dict, "pbc", [true, true, true]) # default to periodic in all directions
-    system_data[:boundary_conditions] =[p ? Periodic() : DirichletZero() for p in pbc]
+
+    for k in atomkeys(system)
+        if k in (:atomic_symbol, :atomic_number, :atomic_mass, :velocity, :position)
+            continue  # Already done
+        end
+        atoms_base_keys = (:charge, :covalent_radius, :vdw_radius,
+                           :magnetic_moment, :pseudopotential)
+        v = system[1, k]
+        if k in atoms_base_keys || v isa ExtxyzType
+            # These are either Unitful quantities, which are uniformly supported
+            # across all of AtomsBase or the value has a type that Extxyz can write
+            # losslessly, so we can just write them no matter the value
+            atom_data[k] = system[:, k]
+        elseif v isa Quantity || (v isa AbstractArray && eltype(v) <: Quantity)
+            @warn "Unitful quantity $k is not yet supported in ExtXYZ."
+        else
+            @warn "Writing quantities of type $(typeof(v)) is not supported in ExtXYZ."
+        end
+    end
+
+    box = map(1:3) do i
+        v = zeros(3)u"Å"
+        i ≤ D && (v[1:D] = bounding_box(system)[i])
+        v
+    end
+    system_data = Dict{Symbol,Any}(
+        :bounding_box => box,
+        :boundary_conditions => boundary_conditions(system)
+    )
+
+    # Extract extra system properties
+    system_data = Dict{Symbol,Any}()
+    for (k, v) in pairs(system)
+        atoms_base_keys = (:charge, :multiplicity, :boundary_conditions, :bounding_box)
+        if k in atoms_base_keys || v isa ExtxyzType
+            # These are either Unitful quantities, which are uniformly supported
+            # across all of AtomsBase or the value has a type that Extxyz can write
+            # losslessly, so we can just write them no matter the value
+            system_data[k] = v
+        elseif v isa Quantity || (v isa AbstractArray && eltype(v) <: Quantity)
+            @warn "Unitful quantity $k is not yet supported in ExtXYZ."
+        else
+            @warn "Writing quantities of type $(typeof(v)) is not supported in ExtXYZ."
+        end
+    end
+
+    ExtXYZ.Atoms(NamedTuple(atom_data), NamedTuple(system_data))
+end
+
+
+function Atoms(dict::Dict{String, Any})
+    arrays = dict["arrays"]
+    info   = dict["info"]
+
+    if haskey(arrays, "Z")
+        Z = Int.(arrays["Z"])
+    elseif haskey(arrays, "species")
+        Z = [element(Symbol(spec)).number for spec in arrays["species"]]
+    else
+        error("Cannot determine atomic numbers. Either 'Z' or 'species' must " *
+              "be present in arrays")
+    end
+    @assert length(Z) == dict["N_atoms"]
+
+    atom_data = Dict{Symbol, Any}(
+        :position      => collect(eachcol(arrays["pos"]))u"Å",
+        :atomic_number => Z,
+    )
+    if haskey(arrays, "species")
+        atom_data[:atomic_symbol] = Symbol.(arrays["species"])
+    else
+        atom_data[:atomic_symbol] = [Symbol(element(num).symbol) for num in Z]
+    end
+    if haskey(arrays, "mass")
+        atom_data[:atomic_mass] = arrays["mass"]u"u"
+    else
+        atom_data[:atomic_mass] = [element(num).atomic_mass for num in Z]
+    end
+    if haskey(arrays, "velocities")
+        atom_data[:velocity] = collect(eachcol(arrays["velocities"])) * uVelocity
+    else
+        atom_data[:velocity] = [zeros(3) * uVelocity for _ in 1:Z]
+    end
+
+    for key in keys(arrays)
+        key in ("mass", "species", "Z", "pos", "velocities") && continue  # Already done
+        if key in ("vdw_radius", "covalent_radius")  # Add length unit
+            atom_data[Symbol(key)] = arrays[key] * u"Å"
+        elseif key in ("charge", )  # Add charge unit
+            atom_data[Symbol(key)] = arrays[key] * u"e_au"
+        else
+            atom_data[Symbol(key)] = arrays[key]
+        end
+    end
+
+    system_data = Dict{Symbol, Any}(:bounding_box => collect(eachrow(dict["cell"]))u"Å", )
+    if haskey(dict, "pbc")
+        system_data[:boundary_conditions] = [p ? Periodic() : DirichletZero()
+                                             for p in dict["pbc"]]
+    else
+        @warn "'pbc' not contained in 'info' dict. Defaulting to all-periodic boundary. "
+        system_data[:boundary_conditions] = fill(Periodic(), 3)
+    end
+
+    for key in keys(info)
+        if key in ("charge", )
+            system_data[Symbol(key)] = info[key] * u"e_au"
+        else
+            system_data[Symbol(key)] = info[key]
+        end
+    end
 
     Atoms(NamedTuple(atom_data), NamedTuple(system_data))
 end
-
-read_dict(dict::Dict{String}{Any}) = Atoms(dict)
+read_dict(dict::Dict{String,Any}) = Atoms(dict)
 
 function write_dict(atoms::Atoms)
-    system_data = Dict(pairs(atoms.system_data))
-    atom_data = Dict(pairs(atoms.atom_data))
-    if haskey(atom_data, :atomic_masses) 
-        if all(atom_data[:atomic_masses] .== getfield.(elements[atom_data[:atomic_numbers]], :atomic_mass))
-            pop!(atom_data, :atomic_masses)
+    arrays = Dict{String,Any}()
+
+    arrays["Z"] = atoms.atom_data.atomic_number
+    arrays["species"] = [element(Z).symbol for Z in arrays["Z"]]
+    if atoms.atom_data.atomic_symbol != [Symbol(element(Z).symbol) for Z in arrays["Z"]]
+        @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
+              "in ExtXYZ. Atomic numbers take preference.")
+    end
+    if atoms.atom_data.atomic_mass != [element(Z).atomic_mass for Z in arrays["Z"]]
+        arrays["mass"] = ustrip.(u"u", atoms.atom_data.atomic_mass)
+    end
+
+    arrays["velocities"] = zeros(D, length(atoms))
+    for (i, velocity) in enumerate(atoms.atom_data.velocity)
+        arrays["velocities"][:, i] = ustrip.(uVelocity, velocity)
+    end
+    arrays["pos"] = zeros(D, length(atoms))
+    for (i, position) in enumerate(atoms.atom_data.position)
+        arrays["pos"][:, i] = ustrip.(u"Å", position)
+    end
+
+    for (k, v) in pairs(atoms.atom_data)
+        k in (:atomic_mass, :atomic_symbol, :atomic_number, :position, :velocity) && continue
+        if k in (:vdw_radius, :covalent_radius)  # Remove length unit
+            arrays[string(k)] = ustrip.(u"Å", v)
+        elseif k in (:charge, )
+            arrays[string(k)] = ustrip.(u"e_au", v)
+        elseif v isa AbstractVector{<:ExtxyzType}
+            arrays[string(k)] = v  # These can be written losslessly
+        else
+            @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
         end
     end
-    bcs = pop!(system_data, :boundary_conditions)
-    box = pop!(system_data, :box)
-    dict = Dict(
-        "N_atoms" => length(atoms),
-        "cell" => (_write_convert(box))',
-        "pbc" => isequal.(bcs, [Periodic() for i=1:D]) |> Array,
-        "info" => _dict_remap_rev(system_data),
-        "arrays" => _dict_remap_rev(atom_data))
-    return dict
+
+    pbc = zeros(Bool, D)
+    for (i, bc) in enumerate(atoms.system_data.boundary_conditions)
+        pbc[i] = bc isa Periodic
+    end
+    cell = zeros(D, D)
+    for (i, bvector) in enumerate(atoms.system_data.bounding_box)
+        cell[i, :] = ustrip.(u"Å", bvector)
+    end
+
+    # Deal with other system keys
+    info = Dict{String,Any}()
+    for (k, v) in pairs(atoms.system_data)
+        k in (:boundary_conditions, :bounding_box) && continue # Already dealt with
+        if k in (:charge, )
+            info[string(k)] = ustrip(u"e_au", atoms.system_data[k])
+        elseif v isa ExtxyzType
+            info[string(k)] = v
+        elseif v isa AbstractArray{<:ExtxyzType}
+            info[string(k)] = convert(Array, v)
+        else
+            @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
+        end
+    end
+    Dict("N_atoms" => length(atoms),
+         "cell"    => cell,
+         "pbc"     => pbc,
+         "info"    => info,
+         "arrays"  => arrays)
 end
+write_dict(system::AbstractSystem{D}) = write_dict(Atoms(system))
 
 # --------- AtomsBase interface
 
-bounding_box(sys::Atoms)        = sys.system_data.box
-boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
-Base.length(sys::Atoms)         = length(sys.atom_data.positions)
-Base.size(sys::Atoms)           = size(sys.atom_data.positions)
+Base.length(sys::Atoms) = length(sys.atom_data.position)
+Base.size(sys::Atoms)   = (length(sys), )
+AtomsBase.bounding_box(sys::Atoms) = sys.system_data.bounding_box
+AtomsBase.boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
 
-function Base.isapprox(sys1::Atoms{NT1,NT2}, sys2::Atoms{NT1,NT2}) where {NT1, NT2}
-    for (seq1, seq2) in [(sys1.system_data, sys2.system_data),
-                         (sys1.atom_data, sys2.atom_data)]
-        for (k1, v1) in pairs(seq1)
-            if v1 isa Array{<:AbstractFloat} || v1 isa AbstractFloat
-                v1 ≈ seq2[k1]  || (println("key $k1: $v1 !≈ $(seq2[k1])"); return false)
-            else
-                v1 == seq2[k1] || (println("key $k1: $v1 != $(seq2[k1])"); return false)
-            end
-        end
-    end
-    return true
-end
+AtomsBase.species_type(::FS) where {FS <: Atoms} = AtomView{FS}
+Base.getindex(sys::Atoms, x::Symbol) = getindex(sys.system_data, x)
+Base.haskey(sys::Atoms, x::Symbol)   = haskey(sys.system_data, x)
+Base.keys(sys::Atoms) = keys(sys.system_data)
 
-# if types don't match then neither do the systems
-Base.isapprox(sys1::Atoms{NT1,NT2}, sys2::Atoms{NT3,NT4}) where {NT1, NT2, NT3, NT4} = (println("type mismatch"); return false)
+Base.getindex(sys::Atoms, i::Integer) = AtomView(sys, i)
+Base.getindex(sys::Atoms, i::Integer, x::Symbol) = getindex(sys.atom_data, x)[i]
+Base.getindex(sys::Atoms, ::Colon,    x::Symbol) = getindex(sys.atom_data, x)
 
-species_type(sys::FS) where {FS <: Atoms} = AtomView{FS}
-Base.getindex(sys::Atoms, index::Int)     = AtomView(sys, index)
+AtomsBase.atomkeys(sys::Atoms) = keys(sys.atom_data)
+AtomsBase.hasatomkey(sys::Atoms, x::Symbol) = haskey(sys.atom_data, x)
 
-position(s::Atoms)       = s.atom_data.positions
-atomic_symbol(s::Atoms)  = s.atom_data.atomic_symbols
-atomic_number(s::Atoms)  = s.atom_data.atomic_numbers
-atomic_mass(s::Atoms)    = s.atom_data.atomic_masses
-velocity(s::Atoms)       = haskey(s.atom_data, :velocities) ? s.atom_data.velocities : missing
-
-position(s::Atoms, i)      = s.atom_data.positions[i]
-atomic_symbol(s::Atoms, i) = s.atom_data.atomic_symbols[i]
-atomic_number(s::Atoms, i) = s.atom_data.atomic_numbers[i]
-atomic_mass(s::Atoms, i)   = s.atom_data.atomic_masses[i]
-velocity(s::Atoms, i)      = haskey(s.atom_data, :velocities) ? s.atom_data.velocities[i] : missing
-
-function Base.show(io::IO, system::Atoms)
-    print(io, "Atoms")
-    AtomsBase.show_system(io, system)
-end
+AtomsBase.position(s::Atoms)                  = Base.getindex(s, :, :position)
+AtomsBase.position(s::Atoms, i::Integer)      = Base.getindex(s, i, :position)
+AtomsBase.velocity(s::Atoms)                  = Base.getindex(s, :, :velocity)
+AtomsBase.velocity(s::Atoms, i::Integer)      = Base.getindex(s, i, :velocity)
+AtomsBase.atomic_mass(s::Atoms)               = Base.getindex(s, :, :atomic_mass)
+AtomsBase.atomic_mass(s::Atoms, i::Integer)   = Base.getindex(s, i, :atomic_mass)
+AtomsBase.atomic_symbol(s::Atoms)             = Base.getindex(s, :, :atomic_symbol)
+AtomsBase.atomic_symbol(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_symbol)
+AtomsBase.atomic_number(s::Atoms)             = Base.getindex(s, :, :atomic_number)
+AtomsBase.atomic_number(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_number)
 
 # --------- FileIO compatible interface (hence not exported)
 
@@ -186,7 +270,5 @@ function load(file::Union{String,IOStream}; kwargs...)
     end
 end
 
-save(file::Union{String,IOStream}, system::Atoms; kwargs...) = write_frame(file, write_dict(system); kwargs...)
-
-save(file::Union{String,IOStream}, systems::Vector{Atoms{NT1,NT2}}; kwargs...) where {NT1,NT2} = write_frames(file, write_dict.(systems); kwargs...)
-save(file::Union{String,IOStream}, systems::Vector{Atoms}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
+save(file::Union{String,IOStream}, system::AbstractSystem; kwargs...) = write_frame(file, write_dict(system); kwargs...)
+save(file::Union{String,IOStream}, systems::AbstractVector{<: AbstractSystem}; kwargs...) = write_frames(file, write_dict.(systems); kwargs...)
