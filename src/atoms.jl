@@ -126,7 +126,7 @@ function Atoms(dict::Dict{String, Any})
     if haskey(arrays, "velocities")
         atom_data[:velocity] = collect(eachcol(arrays["velocities"])) * uVelocity
     else
-        atom_data[:velocity] = [zeros(3) * uVelocity for _ in 1:Z]
+        atom_data[:velocity] = [zeros(3) * uVelocity for _ in Z]
     end
 
     for key in keys(arrays)
@@ -145,7 +145,7 @@ function Atoms(dict::Dict{String, Any})
         system_data[:boundary_conditions] = [p ? Periodic() : DirichletZero()
                                              for p in dict["pbc"]]
     else
-        @warn "'pbc' not contained in 'info' dict. Defaulting to all-periodic boundary. "
+        @warn "'pbc' not contained in dict. Defaulting to all-periodic boundary. "
         system_data[:boundary_conditions] = fill(Periodic(), 3)
     end
 

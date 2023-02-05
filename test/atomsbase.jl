@@ -30,8 +30,8 @@ end
     arrays = atoms["arrays"]
     @test arrays["Z"]          == atprop.atomic_number
     @test arrays["species"]    == string.(atprop.atomic_symbol)
-    @test arrays["mass"]       == ustrip.(u"u",   atprop.atomic_mass)
-    @test arrays["pos"]        ≈  ustrip.(u"Å",   hcat(atprop.position...)) atol=1e-10
+    @test arrays["mass"]       == ustrip.(u"u",  atprop.atomic_mass)
+    @test arrays["pos"]        ≈  ustrip.(u"Å",  hcat(atprop.position...)) atol=1e-10
     @test arrays["velocities"] ≈  ustrip.(sqrt(u"eV"/u"u"),
                                           hcat(atprop.velocity...)) atol=1e-10
 
@@ -48,6 +48,18 @@ end
     system = make_test_system(; drop_atprop=[:velocity]).system
     atoms  = ExtXYZ.write_dict(Atoms(system))
     @test iszero(atoms["arrays"]["velocities"])
+end
+
+@testset "Defaults dict -> Atoms" begin
+    data = Dict("N_atoms" => 1, "pbc" => [true, true, true],
+                "arrays" => Dict("pos" => [zeros(3)], "Z" => [1]),
+                "cell" => diagm([1, 2, 3.]), "info" => Dict{String,Any}())
+    atoms = Atoms(data)
+    @test length(atoms) == 1
+    @test all(periodicity(atoms))
+    @test atomic_symbol(atoms, 1) == :H
+    @test atomic_number(atoms)    == [1]
+    @test iszero(velocity(atoms, 1))
 end
 
 @testset "Warning about setting invalid data" begin
