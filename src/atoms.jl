@@ -140,13 +140,20 @@ function Atoms(dict::Dict{String, Any})
         end
     end
 
-    system_data = Dict{Symbol, Any}(:bounding_box => collect(eachrow(dict["cell"]))u"Å", )
-    if haskey(dict, "pbc")
-        system_data[:boundary_conditions] = [p ? Periodic() : DirichletZero()
-                                             for p in dict["pbc"]]
-    else
-        @warn "'pbc' not contained in dict. Defaulting to all-periodic boundary. "
-        system_data[:boundary_conditions] = fill(Periodic(), 3)
+    system_data = Dict{Symbol, Any}()
+    if haskey(dict, "cell")
+        system_data[:bounding_box] = collect(eachrow(dict["cell"]))u"Å"
+        if haskey(dict, "pbc")
+            system_data[:boundary_conditions] = [p ? Periodic() : DirichletZero()
+                                                 for p in dict["pbc"]]
+        else
+            @warn "'pbc' not contained in dict. Defaulting to all-periodic boundary. "
+            system_data[:boundary_conditions] = fill(Periodic(), 3)
+        end
+    else  # Infinite system
+        haskey(dict, "pbc") && @warn "'pbc' ignored since no 'cell' entry found in dict."
+        system_data[:boundary_conditions] = fill(DirichletZero(), 3)
+        system_data[:bounding_box] = infinite_box(3)
     end
 
     for key in keys(info)
