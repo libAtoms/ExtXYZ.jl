@@ -1,6 +1,9 @@
+using AtomsBase
+using AtomsBaseTesting
 using ExtXYZ
 using Test
-include("atomsbase_common.jl")
+using Unitful
+using UnitfulAtomic
 
 @testset "Conversion AtomsBase -> Atoms" begin
     system = make_test_system().system
@@ -53,7 +56,7 @@ end
 @testset "Defaults dict -> Atoms" begin
     data = Dict("N_atoms" => 1, "pbc" => [true, true, true],
                 "arrays" => Dict("pos" => [zeros(3)], "Z" => [1]),
-                "cell" => diagm([1, 2, 3.]), "info" => Dict{String,Any}())
+                "cell" => randn(3, 3), "info" => Dict{String,Any}())
     atoms = Atoms(data)
     @test length(atoms) == 1
     @test all(periodicity(atoms))
