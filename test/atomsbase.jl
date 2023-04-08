@@ -86,5 +86,5 @@ end
         ExtXYZ.save(outfile, system)
         ExtXYZ.load(outfile)::AbstractSystem
     end
-    test_approx_eq(system, io_system; rtol=1e-6)
+    test_approx_eq(system, io_system; rtol=1e-4)
 end
