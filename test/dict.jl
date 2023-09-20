@@ -109,6 +109,30 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
         @testset "missingfile" begin
             @test_throws ErrorException("file bla.extxyz cannot be opened for reading") read_frame("bla.extxyz")
         end
+
+        @testset "emptyfile" begin
+            s="""
+
+
+            """
+            open(infile, "w") do io
+                print(io, s)
+            end
+            @test_throws ArgumentError("Collection is empty, must contain exactly 1 element") read_frame(infile)
+        end
+
+        @testset "zeroatoms" begin
+            s="""0
+
+
+            """
+            open(infile, "w") do io
+                print(io, s)
+            end
+            ExtXYZ.cfopen(infile) do fp
+                @test_throws ErrorException("ExtXYZ frame contains zero atoms. Behaviour is undefined!") read_frame(fp)
+            end
+        end
     finally
         rm(infile, force=true)
         rm(outfile, force=true)
