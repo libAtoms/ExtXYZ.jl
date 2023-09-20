@@ -1,35 +1,4 @@
-using ExtXYZ
 using Test
-using PyCall
-using Unitful
-using AtomsBase
-
-"""
-Check two dictionaries `seq1` and `seq2` are approximately equal
-
-Returns true if all keys match, all non-float values match, and all pairs 
-of float values `(v1, v2)` satisfy `isapprox(v1, v2)`
-"""
-function Base.isapprox(seq1::AbstractDict, seq2::AbstractDict)
-    for (k1,v1) in seq1
-        k1 ∈ keys(seq2) || (println("key $k1 missing from seq2"); return false)
-        if v1 isa AbstractDict
-            v1 ≈ seq2[k1] || (println("key $k1: $v1 !≈ $(seq2[k1])"); return false)
-        elseif v1 isa Array{<:AbstractFloat} || v1 isa AbstractFloat
-            v1 ≈ seq2[k1]  || (println("key $k1: $v1 !≈ $(seq2[k1])"); return false)
-        else
-            v1 == seq2[k1] || (println("key $k1: $v1 != $(seq2[k1])"); return false)
-        end
-    end
-    return true
-end
-
-function Test_Units(seq::ExtXYZ.Atoms)
-    all([all(unit.(position(seq)[i]) .== u"Å") for i=1:length(seq)]) || return false
-    all([all(unit.(bounding_box(seq)[i]) .== u"Å") for i=1:n_dimensions(seq)]) || return false
-    all([all(unit.(atomic_mass(seq)[i]) .== u"u") for i=1:length(seq)]) || return false
-    return true
-end
 
 @testset "ExtXYZ.jl" begin
     test_xyz(frame) = """2
