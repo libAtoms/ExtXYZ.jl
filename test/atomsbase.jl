@@ -88,3 +88,28 @@ end
     end
     test_approx_eq(system, io_system; rtol=1e-4)
 end
+
+@testset "Extra variables for atoms" begin
+    text = """2
+Lattice="2.614036117884091 0.0 0.0 0.0 2.6528336296738044 0.0 0.0 0.0 3.8250280122051756" Properties=species:S:1:pos:R:3:force:R:3:tags:I:1 config_type=FLD_TiAl spacegroup="P 1" virial="5.072173561696366 0.1220123768779895 0.6518229755809941 0.1220123768779895 4.667636799854875 0.5969893898844183 0.6518229755809941 0.5969893898844183 4.700422750506493" energy=-1703.64063822 unit_cell=conventional n_minim_iter=2 pbc="T T T"
+Ti       1.30924260       1.32316179       1.62637131       0.86219000       0.78737000       2.65969000        0
+Al       0.11095015       0.09471147      -0.05013464      -0.86219000      -0.78737000      -2.65969000        1
+"""
+    infile = tempname()
+    outfile = tempname()
+    open(infile, "w") do io
+        print(io, text)
+    end
+    frame = read_frame(infile)
+    atoms = Atoms(frame)
+    @test all( atoms[1][:force] .== [0.86219000, 0.78737000, 2.65969000] )
+    @test all( atoms[2][:force] .== [-0.86219000, -0.78737000, -2.65969000] )
+    @test atoms[1][:tags] == 0
+    @test atoms[2][:tags] == 1
+    ExtXYZ.save(outfile, atoms)
+    new_atoms = ExtXYZ.load(outfile)
+    @test all( atoms[1][:force] .== new_atoms[1][:force] )
+    @test all( atoms[2][:force] .== new_atoms[2][:force] )
+    @test atoms[1][:tags] == new_atoms[1][:tags]
+    @test atoms[2][:tags] == new_atoms[2][:tags]
+end
