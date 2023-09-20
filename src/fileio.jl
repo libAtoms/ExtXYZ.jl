@@ -212,7 +212,7 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false)
             eof = true
             throw(EOFError())
         end
-
+        (nat[] == 0) && error("ExtXYZ frame contains zero atoms. Behaviour is undefined!")
         if verbose
             cprint_dict(info[])
             cprint_dict(arrays[])
@@ -287,7 +287,7 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
     return dict
 end
 
-read_frame(file::Union{String,IOStream}, index; kwargs...) = read_frames(file, index; kwargs...)[1]
+read_frame(file::Union{String,IOStream}, index; kwargs...) = only(read_frames(file, index; kwargs...))
 read_frame(file::Union{String,IOStream}; kwargs...) = read_frame(file, 1; kwargs...)
 
 """
