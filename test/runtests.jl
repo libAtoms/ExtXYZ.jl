@@ -161,6 +161,57 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
                 @test(ismissing(velocity(sys2[1])))
                 @test(ismissing(velocity(sys2, 1)))
             end
+
+            @testset "AtomsBase missing cell" begin
+                fname = tempname()
+                try
+                    # We do this twice, first with pbc = "F F F" and no cell - should work and give a bounding box
+                    # then again with a pbc = "T T T" but with cell missing - should raise an error
+                    for pbc in ["F F F", "T T T"]
+
+                        text = """13
+                        Properties=species:S:1:pos:R:3:forces:R:3 energy=-66.79083251953125 pbc="$pbc"
+                        C       -5.13553286       0.00000000       0.00000000       0.00006186      -0.00000000       0.00000000
+                        H       -5.72485781      -0.91726500       0.00000000      -0.00001280       0.00000756       0.00000000
+                        H       -5.72485781       0.91726500       0.00000000      -0.00001280      -0.00000756      -0.00000000
+                        C       -3.82464290       0.00000000       0.00000000      -0.00004186       0.00000000       0.00000000
+                        C       -2.55226111       0.00000000       0.00000000       0.00003090      -0.00000000      -0.00000000
+                        C       -1.27494299       0.00000000       0.00000000      -0.00009426       0.00000000      -0.00000000
+                        C        0.00000000       0.00000000       0.00000000       0.00000000      -0.00000000      -0.00000000
+                        C        1.27494299       0.00000000       0.00000000       0.00009426       0.00000000       0.00000000
+                        C        2.55226111       0.00000000       0.00000000      -0.00003090      -0.00000000       0.00000000
+                        C        3.82464290       0.00000000       0.00000000       0.00004186       0.00000000      -0.00000000
+                        H        5.72485781       0.00000000       0.91726500       0.00001280      -0.00000000      -0.00000756
+                        H        5.72485781       0.00000000      -0.91726500       0.00001280       0.00000000       0.00000756
+                        C        5.13553286       0.00000000       0.00000000      -0.00006186      -0.00000000      -0.00000000
+                        """
+                        open(fname, "w") do io
+                            print(io, text)
+                        end
+
+                        if pbc == "F F F"
+                            atoms = ExtXYZ.load(fname)
+                            pos = position(atoms)
+                            box = bounding_box(atoms)
+                            frac_pos = inv(box) * hcat(pos...)
+                            @test maximum(frac_pos) <= 0.5
+                            @test minimum(frac_pos) >= -0.5
+                        else
+                            try
+                                ExtXYZ.load(fname)
+                            catch e
+                                buf = IOBuffer()
+                                showerror(buf, e)
+                                message = String(take!(buf))
+                                @test message == "No cell specified but pbc = Bool[1, 1, 1]. This is inconsistent."
+                            end                            
+                        end
+                    end
+
+                finally
+                    isfile(fname) && rm(fname)
+                end
+            end
         end
 
         try

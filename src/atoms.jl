@@ -1,3 +1,4 @@
+using LinearAlgebra
 using AtomsBase
 using PeriodicTable
 using StaticArrays
@@ -99,11 +100,24 @@ function Atoms(dict::Dict{String}{Any})
     else
         atom_data[:atomic_masses] .* u"u"
     end
-  
+
     system_data = _dict_remap_fwd(dict["info"])
-    system_data[:box] = [dict["cell"][i, :] for i in 1:D ].*u"Å" # lattice vectors are rows from cell matrix
-    pbc = get(dict, "pbc", [true, true, true]) # default to periodic in all directions
+
+    pbc = dict["pbc"]
     system_data[:boundary_conditions] =[p ? Periodic() : DirichletZero() for p in pbc]
+
+    if haskey(dict, "cell")
+        box = [dict["cell"][i, :] for i in 1:D ].*u"Å" # lattice vectors are rows from cell matrix
+    else
+        if (pbc == [false, false, false])
+            extents = [extrema(getindex.(atom_data[:positions], dim)) for dim=1:3]
+            sizes = [extents[dim][2] - extents[dim][1] for dim=1:3]
+            box = diagm(sizes)
+        else
+            error("No cell specified but pbc = $pbc. This is inconsistent.")
+        end
+    end
+    system_data[:box] = box
 
     Atoms(NamedTuple(atom_data), NamedTuple(system_data))
 end

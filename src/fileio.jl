@@ -269,14 +269,16 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
     dict = Dict{String, Any}()
     dict["N_atoms"] = nat # number of atoms
 
-    # periodic boundary conditions
-    if "pbc" in keys(info)
-        dict["pbc"] = pop!(info, "pbc")
-    end
-
     # cell is transpose of the stored lattice
     lattice = extract_lattice!(info)
     if (!isnothing(lattice)) dict["cell"] = permutedims(lattice, (2, 1)) end
+
+    # periodic boundary conditions
+    # default is "FFF" if no cell, "TTT" if cell present
+    dict["pbc"] = isnothing(lattice) ? [false, false, false] : [true, true, true]
+    if "pbc" in keys(info)
+        dict["pbc"] = pop!(info, "pbc")
+    end
 
     delete!(info, "Properties")
 
