@@ -135,6 +135,8 @@ function Atoms(dict::Dict{String, Any})
             atom_data[Symbol(key)] = arrays[key] * u"Å"
         elseif key in ("charge", )  # Add charge unit
             atom_data[Symbol(key)] = arrays[key] * u"e_au"
+        elseif typeof(arrays[key]) <: AbstractMatrix
+            atom_data[Symbol(key)] = [ collect(col) for col in eachcol(arrays[key]) ]  
         else
             atom_data[Symbol(key)] = arrays[key]
         end
@@ -198,6 +200,8 @@ function write_dict(atoms::Atoms)
             arrays[string(k)] = ustrip.(u"e_au", v)
         elseif v isa AbstractVector{<:ExtxyzType}
             arrays[string(k)] = v  # These can be written losslessly
+        elseif v isa AbstractArray && eltype(v) <: AbstractVector{<:ExtxyzType}
+            arrays[string(k)] = reduce(hcat, v)
         else
             @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
         end
