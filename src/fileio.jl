@@ -203,16 +203,19 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false)
     nat = Ref{Cint}(0)
     info = Ref{Ptr{DictEntry}}()
     arrays = Ref{Ptr{DictEntry}}()
-    eof = false
+    failed = false
     try
         res =  ccall((:extxyz_read_ll, libextxyz),
                       Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}),
                       _kv_grammar[], fp, nat, info, arrays)
         if res != 1
-            eof = true
+            failed = true
             throw(EOFError())
         end
-        (nat[] == 0) && error("ExtXYZ frame contains zero atoms. Behaviour is undefined!")
+        if nat[] == 0
+            failed = true
+            error("ExtXYZ frame contains zero atoms. Behaviour is undefined!")
+        end
         if verbose
             cprint_dict(info[])
             cprint_dict(arrays[])
@@ -225,7 +228,7 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false)
         return nat[], jinfo, jarrays
 
     finally
-        if !eof
+        if !failed
             cfree_dict(info[])
             cfree_dict(arrays[])
         end
