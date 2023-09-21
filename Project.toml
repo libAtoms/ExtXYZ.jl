@@ -18,6 +18,7 @@ StaticArrays = "1.5"
 Unitful = "1"
 UnitfulAtomic = "1"
 julia = "1"
+extxyz_jll = "0.1.3"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
