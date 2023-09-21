@@ -199,15 +199,16 @@ function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=n
     return c_dict_ptr
 end
 
-function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false)
+function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing)
     nat = Ref{Cint}(0)
     info = Ref{Ptr{DictEntry}}()
     arrays = Ref{Ptr{DictEntry}}()
     failed = false
+    (comment === nothing) && (comment = C_NULL)
     try
         res =  ccall((:extxyz_read_ll, libextxyz),
-                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}),
-                      _kv_grammar[], fp, nat, info, arrays)
+                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}, Cstring),
+                      _kv_grammar[], fp, nat, info, arrays, comment)
         if res != 1
             failed = true
             throw(EOFError())
