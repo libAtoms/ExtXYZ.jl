@@ -53,7 +53,7 @@ function Atoms(system::AbstractSystem{D})
         atoms_base_keys = (:charge, :covalent_radius, :vdw_radius,
                            :magnetic_moment, :pseudopotential)
         v = system[1, k]
-        if k in atoms_base_keys || v isa ExtxyzType
+        if k in atoms_base_keys || v isa ExtxyzType || v isa AbstractVector{<: ExtxyzType}
             # These are either Unitful quantities, which are uniformly supported
             # across all of AtomsBase or the value has a type that Extxyz can write
             # losslessly, so we can just write them no matter the value
@@ -136,7 +136,7 @@ function Atoms(dict::Dict{String, Any})
         elseif key in ("charge", )  # Add charge unit
             atom_data[Symbol(key)] = arrays[key] * u"e_au"
         elseif typeof(arrays[key]) <: AbstractMatrix
-            atom_data[Symbol(key)] = [ collect(col) for col in eachcol(arrays[key]) ]  
+            atom_data[Symbol(key)] = [ collect(col) for col in eachcol(arrays[key]) ]
         else
             atom_data[Symbol(key)] = arrays[key]
         end
