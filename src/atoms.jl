@@ -79,7 +79,7 @@ function Atoms(system::AbstractSystem{D})
     system_data = Dict{Symbol,Any}()
     for (k, v) in pairs(system)
         atoms_base_keys = (:charge, :multiplicity, :boundary_conditions, :bounding_box)
-        if k in atoms_base_keys || v isa ExtxyzType
+        if k in atoms_base_keys || v isa ExtxyzType || v isa AbstractArray{<: ExtxyzType}
             # These are either Unitful quantities, which are uniformly supported
             # across all of AtomsBase or the value has a type that Extxyz can write
             # losslessly, so we can just write them no matter the value
@@ -225,7 +225,12 @@ function write_dict(atoms::Atoms)
         elseif v isa ExtxyzType
             info[string(k)] = v
         elseif v isa AbstractArray{<:ExtxyzType}
-            info[string(k)] = convert(Array, v)
+            if size(v, 1) != 3
+                @warn("Writing Array data with a first leading dimension " *
+                      "different from 3 not supported.")  # Else leads to segfaults
+            else
+                info[string(k)] = convert(Array, v)
+            end
         else
             @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
         end
