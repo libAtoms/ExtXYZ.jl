@@ -235,11 +235,12 @@ function write_dict(atoms::Atoms)
             @warn "Writing quantities of type $(typeof(v)) is not supported in write_dict."
         end
     end
-    Dict("N_atoms" => length(atoms),
-         "cell"    => cell,
-         "pbc"     => pbc,
-         "info"    => info,
-         "arrays"  => arrays)
+    dict = Dict("N_atoms" => length(atoms),
+                "pbc"     => pbc,
+                "info"    => info,
+                "arrays"  => arrays)
+    all(cell .!= Inf) && (dict["cell"] = cell) # only write cell if its finite
+    return dict
 end
 write_dict(system::AbstractSystem{D}) = write_dict(Atoms(system))
 

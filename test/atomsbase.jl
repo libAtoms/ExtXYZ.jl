@@ -144,3 +144,20 @@ end
         isfile(fname) && rm(fname)
     end
 end
+
+
+@testset "AtomsBase isolated system" begin
+    hydrogen = isolated_system([
+            :H => [0, 0, 0.]u"Å",
+            :H => [0, 0, 1.]u"Å"
+    ])
+
+    fname = tempname()
+    try
+        ExtXYZ.save(fname, hydrogen)
+        new_sys = ExtXYZ.load(fname)
+        test_approx_eq(hydrogen, new_sys; rtol=1e-4)
+    finally
+        isfile(fname) && rm(fname)
+    end
+end
