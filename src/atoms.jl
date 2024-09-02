@@ -1,7 +1,9 @@
 using AtomsBase
 using Unitful
 using UnitfulAtomic
+using StaticArrays
 
+import AtomsBase: AbstractSystem
 export Atoms
 
 const D = 3 # TODO generalise to arbitrary spatial dimensions
@@ -24,14 +26,14 @@ end
 function Atoms(system::AbstractSystem{D})
     n_atoms = length(system)
     atomic_symbols = [Symbol(element(atomic_number(at)).symbol) for at in system]
-    if atomic_symbols != atomic_symbol(system, :)
+    if atomic_symbols != Symbol.(atomic_symbol(system, :))
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
     atom_data = Dict{Symbol,Any}(
         :atomic_symbol => atomic_symbols,
-        :atomic_number => atomic_number(system),
-        :mass   => mass(system)
+        :atomic_number => Int.(atomic_number(system, :)),  # gets messy if not Int
+        :mass   => mass(system, :)
     )
     atom_data[:position] = map(1:n_atoms) do at
         pos = zeros(3)u"Å"
@@ -40,17 +42,18 @@ function Atoms(system::AbstractSystem{D})
     end
     atom_data[:velocity] = map(1:n_atoms) do at
         vel = zeros(3) * uVelocity
-        if !ismissing(velocity(system)) && !ismissing(velocity(system, at))
+        if !ismissing(velocity(system, :)) && !ismissing(velocity(system, at))
             vel[1:D] = velocity(system, at)
         end
-        SVector{D, eltype(pos)}(vel)  # AtomsBase 0.4 requires SVector
+        SVector{D, eltype(vel)}(vel)  # AtomsBase 0.4 requires SVector
     end
 
     for k in atomkeys(system)
         if k in (:atomic_symbol, :atomic_number, :mass, :velocity, :position)
             continue  # Already done
         end
-        atoms_base_keys = (:charge, :covalent_radius, :vdw_radius,
+        # atomic_mass is deprecated for but is sometimes still used
+        atoms_base_keys = (:charge, :atomic_mass, :covalent_radius, :vdw_radius,
                            :magnetic_moment, :pseudopotential)
         v = system[1, k]
         if k in atoms_base_keys || v isa ExtxyzType || v isa AbstractVector{<: ExtxyzType}
@@ -60,14 +63,18 @@ function Atoms(system::AbstractSystem{D})
             atom_data[k] = system[:, k]
         elseif v isa Quantity || (v isa AbstractArray && eltype(v) <: Quantity)
             @warn "Unitful quantity $k is not yet supported in ExtXYZ."
+        elseif k == :species 
+            # atomic_number represents the species in ExtXYZ, which is already 
+            # written into the atom_data dictionary 
+            continue 
         else
             @warn "Writing quantities of type $(typeof(v)) is not supported in ExtXYZ."
         end
     end
 
     system_data = Dict{Symbol,Any}(
-        :bounding_box => bounding_box(system)  # NTuple{D, SVector},
-        :periodicity => periodicity(system)    # NTuple{D, Bool}
+        :bounding_box => bounding_box(system),
+        :periodicity => periodicity(system) 
     )
 
     # Extract extra system properties
@@ -175,7 +182,7 @@ function write_dict(atoms::Atoms)
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
-    if atoms.atom_data.atomic_mass != [element(Z).atomic_mass for Z in arrays["Z"]]
+    if atoms.atom_data.mass != [element(Z).atomic_mass for Z in arrays["Z"]]
         arrays["mass"] = ustrip.(u"u", atoms.atom_data.mass)
     end
 
@@ -256,6 +263,7 @@ Base.keys(sys::Atoms) = keys(sys.system_data)
 
 Base.getindex(sys::Atoms, i::Integer) = AtomView(sys, i)
 Base.getindex(sys::Atoms, i::Integer, x::Symbol) = getindex(sys.atom_data, x)[i]
+Base.getindex(sys::Atoms, i::AbstractVector{<: Integer}, x::Symbol) = getindex(sys.atom_data, x)[i]
 Base.getindex(sys::Atoms, ::Colon,    x::Symbol) = getindex(sys.atom_data, x)
 
 AtomsBase.atomkeys(sys::Atoms) = keys(sys.atom_data)
@@ -266,12 +274,13 @@ AtomsBase.position(s::Atoms, i::_IDX)      = getindex(s, i, :position)
 AtomsBase.velocity(s::Atoms, i::_IDX)      = getindex(s, i, :velocity)
 AtomsBase.mass(s::Atoms, i::_IDX)          = getindex(s, i, :mass)
 AtomsBase.atomic_symbol(s::Atoms, i::_IDX) = getindex(s, i, :atomic_symbol)
-AtomsBase.atomic_symbol(s::Atoms, i::_IDX) = getindex(s, i, :atomic_number)
+AtomsBase.atomic_number(s::Atoms, i::_IDX) = getindex(s, i, :atomic_number)
 
 # AtomsBase now requires the `species` function to be implemented. Since 
 # ExtXYZ requires that atoms are uniquely identified by their atomic number, we 
 # will use the atomic number as the species identifier.
-AtomsBase.species(s::Atoms, i::_IDX) = AtomsBase.atomic_number(s, i)
+AtomsBase.species(s::Atoms, i::_IDX) = 
+            AtomsBase.ChemicalSpecies.(AtomsBase.atomic_symbol(s, i))
 
 # --------- FileIO compatible interface (hence not exported)
 

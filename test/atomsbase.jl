@@ -5,6 +5,13 @@ using Test
 using Unitful
 using UnitfulAtomic
 
+AtomsBase.atomic_number(z::Integer) = z 
+AtomsBase.atomic_symbol(z::Integer) = AtomsBase._chem_el_info[z].symbol
+
+system = make_test_system().system
+at_sys = Atoms(system)
+test_approx_eq(system, Atoms(system))
+
 @testset "Conversion AtomsBase -> Atoms" begin
     system = make_test_system().system
     test_approx_eq(system, Atoms(system))
@@ -33,7 +40,7 @@ end
     arrays = atoms["arrays"]
     @test arrays["Z"]          == atprop.atomic_number
     @test arrays["species"]    == string.(atprop.atomic_symbol)
-    @test arrays["mass"]       == ustrip.(u"u",  atprop.atomic_mass)
+    @test arrays["mass"]       == ustrip.(u"u",  atprop.mass)
     @test arrays["pos"]        ≈  ustrip.(u"Å",  hcat(atprop.position...)) atol=1e-10
     @test arrays["velocities"] ≈  ustrip.(sqrt(u"eV"/u"u"),
                                           hcat(atprop.velocity...)) atol=1e-10
