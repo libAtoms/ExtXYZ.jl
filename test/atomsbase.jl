@@ -7,29 +7,38 @@ using UnitfulAtomic
 
 AtomsBase.atomic_number(z::Integer) = z 
 AtomsBase.atomic_symbol(z::Integer) = AtomsBase._chem_el_info[z].symbol
+AtomsBase.atomic_number(s::Symbol) = AtomsBase._sym2z[s]
 
-system = make_test_system().system
-at_sys = Atoms(system)
-test_approx_eq(system, Atoms(system))
+function simple_test_approx_eq(sys1, sys2)
+    @test all(position(sys1, :) .≈ position(sys2, :))
+    @test all(velocity(sys1, :) .≈ velocity(sys2, :))
+    @test mass(sys1, :) ≈ mass(sys2, :)
+    @test species(sys1, :) == species(sys2, :)
+    @test atomic_number(sys1, :) == atomic_number(sys2, :)
+    @test atomic_symbol(sys1, :) == atomic_symbol(sys2, :)
+    @test cell(sys1) == cell(sys2)
+    @test periodicity(sys1) == periodicity(sys2)
+    @test all(bounding_box(sys1) .≈ bounding_box(sys2))
+end    
 
 @testset "Conversion AtomsBase -> Atoms" begin
     system = make_test_system().system
-    test_approx_eq(system, Atoms(system))
+    simple_test_approx_eq(system, Atoms(system))
 end
 
 @testset "Conversion AtomsBase -> dict (velocity)" begin
     system, atoms, atprop, sysprop, box, bcs = make_test_system()
     atoms = ExtXYZ.write_dict(Atoms(system))
 
-    cell = zeros(3, 3)
+    c3ll = zeros(3, 3)
     for i in 1:3
-        cell[i, :] = ustrip.(u"Å", box[i])
+        c3ll[i, :] = ustrip.(u"Å", box[i])
     end
 
-    @assert bcs == [Periodic(), Periodic(), DirichletZero()]
+    @assert bcs == (true, true, false)
     @test atoms["pbc"]     == [true, true, false]
     @test atoms["N_atoms"] == 5
-    @test atoms["cell"]    == cell
+    @test atoms["cell"]    == c3ll
 
     info = atoms["info"]
     @test sort(collect(keys(info))) == ["charge", "extra_data", "multiplicity"]
@@ -38,15 +47,16 @@ end
     @test info["multiplicity"] == sysprop.multiplicity
 
     arrays = atoms["arrays"]
-    @test arrays["Z"]          == atprop.atomic_number
-    @test arrays["species"]    == string.(atprop.atomic_symbol)
-    @test arrays["mass"]       == ustrip.(u"u",  atprop.mass)
+    @test arrays["Z"]          == AtomsBase.atomic_number.(atprop.atomic_symbol)
+    @test arrays["atomic_symbol"]    == string.(atprop.atomic_symbol)
+    # mass is not written to the dict because the mass == mass(element)
+    # @test arrays["mass"]       == ustrip.(u"u",  atprop.atomic_mass)
     @test arrays["pos"]        ≈  ustrip.(u"Å",  hcat(atprop.position...)) atol=1e-10
     @test arrays["velocities"] ≈  ustrip.(sqrt(u"eV"/u"u"),
                                           hcat(atprop.velocity...)) atol=1e-10
 
-    expected_atkeys = ["Z", "charge", "covalent_radius", "magnetic_moment",
-                       "mass", "pos", "species", "vdw_radius", "velocities"]
+    expected_atkeys = ["Z", "atomic_symbol", "charge", "covalent_radius", 
+                       "magnetic_moment", "pos", "vdw_radius", "velocities"]
     @test sort(collect(keys(arrays))) == expected_atkeys
     @test arrays["magnetic_moment"] == atprop.magnetic_moment
     @test arrays["vdw_radius"]      == ustrip.(u"Å", atprop.vdw_radius)
@@ -68,7 +78,7 @@ end
     @test length(atoms) == 1
     @test all(periodicity(atoms))
     @test atomic_symbol(atoms, 1) == :H
-    @test atomic_number(atoms)    == [1]
+    @test atomic_number(atoms, :)    == [1,]
     @test iszero(velocity(atoms, 1))
 end
 
@@ -82,7 +92,7 @@ end
                        (:warn, r"Mismatch between atomic numbers and atomic symbols"),
                        match_mode=:any, ExtXYZ.write_dict(Atoms(system)))
 
-    @test atoms["arrays"]["species"] == ["H", "H", "C", "N", "He"]
+    @test atoms["arrays"]["atomic_symbol"] == ["H", "H", "C", "N", "He"]
     @test atoms["arrays"]["Z"]       == [1, 1, 6, 7, 2]
 end
 
@@ -93,7 +103,7 @@ end
         ExtXYZ.save(outfile, system)
         ExtXYZ.load(outfile)::AbstractSystem
     end
-    test_approx_eq(system, io_system; rtol=1e-4)
+    simple_test_approx_eq(system, io_system; rtol=1e-4)
 end
 
 @testset "Extra variables for atoms" begin

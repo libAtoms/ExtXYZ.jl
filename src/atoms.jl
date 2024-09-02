@@ -25,14 +25,17 @@ end
 
 function Atoms(system::AbstractSystem{D})
     n_atoms = length(system)
+    s = species(system, :) 
     atomic_symbols = [Symbol(element(atomic_number(at)).symbol) for at in system]
-    if atomic_symbols != Symbol.(atomic_symbol(system, :))
+    atomic_numbers = atomic_number.(s)
+    if atomic_symbols != Symbol.(s)
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
     atom_data = Dict{Symbol,Any}(
         :atomic_symbol => atomic_symbols,
         :atomic_number => Int.(atomic_number(system, :)),  # gets messy if not Int
+        :species => s, 
         :mass   => mass(system, :)
     )
     atom_data[:position] = map(1:n_atoms) do at
@@ -49,7 +52,7 @@ function Atoms(system::AbstractSystem{D})
     end
 
     for k in atomkeys(system)
-        if k in (:atomic_symbol, :atomic_number, :mass, :velocity, :position)
+        if k in (:species, :atomic_symbol, :atomic_number, :mass, :velocity, :position)
             continue  # Already done
         end
         # atomic_mass is deprecated for but is sometimes still used
@@ -63,10 +66,6 @@ function Atoms(system::AbstractSystem{D})
             atom_data[k] = system[:, k]
         elseif v isa Quantity || (v isa AbstractArray && eltype(v) <: Quantity)
             @warn "Unitful quantity $k is not yet supported in ExtXYZ."
-        elseif k == :species 
-            # atomic_number represents the species in ExtXYZ, which is already 
-            # written into the atom_data dictionary 
-            continue 
         else
             @warn "Writing quantities of type $(typeof(v)) is not supported in ExtXYZ."
         end
@@ -177,7 +176,7 @@ function write_dict(atoms::Atoms)
     arrays = Dict{String,Any}()
 
     arrays["Z"] = atoms.atom_data.atomic_number
-    arrays["species"] = [element(Z).symbol for Z in arrays["Z"]]
+    arrays["atomic_symbol"] = [element(Z).symbol for Z in arrays["Z"]]
     if atoms.atom_data.atomic_symbol != [Symbol(element(Z).symbol) for Z in arrays["Z"]]
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
@@ -196,7 +195,8 @@ function write_dict(atoms::Atoms)
     end
 
     for (k, v) in pairs(atoms.atom_data)
-        k in (:mass, :atomic_symbol, :atomic_number, :position, :velocity) && continue
+        k in (:mass, :atomic_mass, :atomic_symbol, :atomic_number, :position, 
+              :velocity, :species) && continue
         if k in (:vdw_radius, :covalent_radius)  # Remove length unit
             arrays[string(k)] = ustrip.(u"Å", v)
         elseif k in (:charge, )
@@ -236,7 +236,7 @@ function write_dict(atoms::Atoms)
         end
     end
     dict = Dict("N_atoms" => length(atoms),
-                "pbc"     => pbc,
+                "pbc"     => [pbc...],
                 "info"    => info,
                 "arrays"  => arrays)
     all(cell .!= Inf) && (dict["cell"] = cell) # only write cell if its finite
