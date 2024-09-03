@@ -104,20 +104,25 @@ function Atoms(dict::Dict{String, Any})
     elseif haskey(arrays, "species")
         Z = [element(Symbol(spec)).number for spec in arrays["species"]]
     else
-        error("Cannot determine atomic numbers. Either 'Z' or 'species' must " *
+        error("Cannot determine atomic numbers. Either 'Z' or 'S' must " *
               "be present in arrays")
     end
     @assert length(Z) == dict["N_atoms"]
 
+    atomic_symbols = [Symbol(element(num).symbol) for num in Z]
     atom_data = Dict{Symbol, Any}(
         :position      => collect(eachcol(arrays["pos"]))u"Å",
         :atomic_number => Z,
+        :atomic_symbol => atomic_symbols,
+        :species       => AtomsBase.ChemicalSpecies.(atomic_symbols)
     )
-    if haskey(arrays, "species")
-        atom_data[:atomic_symbol] = Symbol.(arrays["species"])
-    else
-        atom_data[:atomic_symbol] = [Symbol(element(num).symbol) for num in Z]
-    end
+    # TODO; Instead of the following, should there be a consistency check
+    #       between S and Z? 
+    # if haskey(arrays, "species")
+    #     atom_data[:atomic_symbol] = Symbol.(arrays["species"])
+    # else
+    #     atom_data[:atomic_symbol] = [Symbol(element(num).symbol) for num in Z]
+    # end
     if haskey(arrays, "mass")
         atom_data[:mass] = arrays["mass"]u"u"
     else
@@ -130,7 +135,7 @@ function Atoms(dict::Dict{String, Any})
     end
 
     for key in keys(arrays)
-        key in ("mass", "species", "Z", "pos", "velocities") && continue  # Already done
+        key in ("mass", "species", "Z", "atomic_symbol", "pos", "velocities") && continue  # Already done
         if key in ("vdw_radius", "covalent_radius")  # Add length unit
             atom_data[Symbol(key)] = arrays[key] * u"Å"
         elseif key in ("charge", )  # Add charge unit
@@ -154,9 +159,9 @@ function Atoms(dict::Dict{String, Any})
     else  # Infinite system
         haskey(dict, "pbc") && @warn "'pbc' ignored since no 'cell' entry found in dict."
         system_data[:periodicity] = (false, false, false) 
-        system_data[:bounding_box] = ( SVector(Inf, 0.0, 0.0), 
-                                       SVector(0.0, Inf, 0.0), 
-                                       SVector(0.0, 0.0, Inf) )
+        system_data[:bounding_box] = ( SVector(Inf, 0.0, 0.0) * u"Å", 
+                                       SVector(0.0, Inf, 0.0) * u"Å", 
+                                       SVector(0.0, 0.0, Inf) * u"Å" )
     end
 
     for key in keys(info)
@@ -176,7 +181,7 @@ function write_dict(atoms::Atoms)
     arrays = Dict{String,Any}()
 
     arrays["Z"] = atoms.atom_data.atomic_number
-    arrays["atomic_symbol"] = [element(Z).symbol for Z in arrays["Z"]]
+    arrays["species"] = [element(Z).symbol for Z in arrays["Z"]]
     if atoms.atom_data.atomic_symbol != [Symbol(element(Z).symbol) for Z in arrays["Z"]]
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
