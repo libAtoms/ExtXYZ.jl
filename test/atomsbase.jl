@@ -6,9 +6,6 @@ using Unitful
 using UnitfulAtomic
 using AtomsBase: AbstractSystem
 
-# AtomsBase.atomic_number(z::Integer) = z 
-AtomsBase.atomic_symbol(z::Integer) = AtomsBase._chem_el_info[z].symbol
-AtomsBase.atomic_number(s::Symbol) = AtomsBase._sym2z[s]
 
 function simple_test_approx_eq(sys1, sys2; test_cell = true)
     @test all(position(sys1, :) .≈ position(sys2, :))
