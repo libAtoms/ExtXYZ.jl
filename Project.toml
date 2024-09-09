@@ -13,7 +13,7 @@ UnitfulAtomic = "a7773ee8-282e-5fa2-be4e-bd808c38a91a"
 extxyz_jll = "6ecdc6fc-93a8-5528-aee3-ac7ae1c60be7"
 
 [compat]
-AtomsBase = "0.4"
+AtomsBase = "0.4.1"
 PeriodicTable = "1"
 StaticArrays = "1.5"
 Unitful = "1"
