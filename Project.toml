@@ -5,7 +5,6 @@ version = "0.2.0"
 
 [deps]
 AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
-AtomsBaseTesting = "ed7c10db-df7e-4efa-a7be-4f4190f7f227"
 PeriodicTable = "7b2266bf-644c-5ea3-82d8-af4bbd25a884"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
