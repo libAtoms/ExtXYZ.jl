@@ -1,7 +1,9 @@
 using AtomsBase
 using Unitful
 using UnitfulAtomic
+using StaticArrays
 
+import AtomsBase: AbstractSystem
 export Atoms
 
 const D = 3 # TODO generalise to arbitrary spatial dimensions
@@ -23,34 +25,38 @@ end
 
 function Atoms(system::AbstractSystem{D})
     n_atoms = length(system)
+    s = species(system, :) 
     atomic_symbols = [Symbol(element(atomic_number(at)).symbol) for at in system]
-    if atomic_symbols != atomic_symbol(system)
+    atomic_numbers = atomic_number.(s)
+    if atomic_symbols != Symbol.(s)
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
     atom_data = Dict{Symbol,Any}(
         :atomic_symbol => atomic_symbols,
-        :atomic_number => atomic_number(system),
-        :atomic_mass   => atomic_mass(system)
+        :atomic_number => Int.(atomic_number(system, :)),  # gets messy if not Int
+        :species => s, 
+        :mass   => mass(system, :)
     )
     atom_data[:position] = map(1:n_atoms) do at
         pos = zeros(3)u"Å"
         pos[1:D] = position(system, at)
-        pos
+        SVector{D, eltype(pos)}(pos)  # AtomsBase 0.4 requires SVector
     end
     atom_data[:velocity] = map(1:n_atoms) do at
         vel = zeros(3) * uVelocity
-        if !ismissing(velocity(system)) && !ismissing(velocity(system, at))
+        if !ismissing(velocity(system, :)) && !ismissing(velocity(system, at))
             vel[1:D] = velocity(system, at)
         end
-        vel
+        SVector{D, eltype(vel)}(vel)  # AtomsBase 0.4 requires SVector
     end
 
     for k in atomkeys(system)
-        if k in (:atomic_symbol, :atomic_number, :atomic_mass, :velocity, :position)
+        if k in (:species, :atomic_symbol, :atomic_number, :mass, :velocity, :position)
             continue  # Already done
         end
-        atoms_base_keys = (:charge, :covalent_radius, :vdw_radius,
+        # atomic_mass is deprecated for but is sometimes still used
+        atoms_base_keys = (:charge, :atomic_mass, :covalent_radius, :vdw_radius,
                            :magnetic_moment, :pseudopotential)
         v = system[1, k]
         if k in atoms_base_keys || v isa ExtxyzType || v isa AbstractVector{<: ExtxyzType}
@@ -65,20 +71,14 @@ function Atoms(system::AbstractSystem{D})
         end
     end
 
-    box = map(1:3) do i
-        v = zeros(3)u"Å"
-        i ≤ D && (v[1:D] = bounding_box(system)[i])
-        v
-    end
     system_data = Dict{Symbol,Any}(
-        :bounding_box => box,
-        :boundary_conditions => boundary_conditions(system)
+        :bounding_box => bounding_box(system),
+        :periodicity => periodicity(system) 
     )
 
     # Extract extra system properties
-    system_data = Dict{Symbol,Any}()
     for (k, v) in pairs(system)
-        atoms_base_keys = (:charge, :multiplicity, :boundary_conditions, :bounding_box)
+        atoms_base_keys = (:charge, :multiplicity, :periodicity, :bounding_box)
         if k in atoms_base_keys || v isa ExtxyzType || v isa AbstractArray{<: ExtxyzType}
             # These are either Unitful quantities, which are uniformly supported
             # across all of AtomsBase or the value has a type that Extxyz can write
@@ -104,24 +104,29 @@ function Atoms(dict::Dict{String, Any})
     elseif haskey(arrays, "species")
         Z = [element(Symbol(spec)).number for spec in arrays["species"]]
     else
-        error("Cannot determine atomic numbers. Either 'Z' or 'species' must " *
+        error("Cannot determine atomic numbers. Either 'Z' or 'S' must " *
               "be present in arrays")
     end
     @assert length(Z) == dict["N_atoms"]
 
+    atomic_symbols = [Symbol(element(num).symbol) for num in Z]
     atom_data = Dict{Symbol, Any}(
         :position      => collect(eachcol(arrays["pos"]))u"Å",
         :atomic_number => Z,
+        :atomic_symbol => atomic_symbols,
+        :species       => AtomsBase.ChemicalSpecies.(atomic_symbols)
     )
-    if haskey(arrays, "species")
-        atom_data[:atomic_symbol] = Symbol.(arrays["species"])
-    else
-        atom_data[:atomic_symbol] = [Symbol(element(num).symbol) for num in Z]
-    end
+    # TODO; Instead of the following, should there be a consistency check
+    #       between S and Z? 
+    # if haskey(arrays, "species")
+    #     atom_data[:atomic_symbol] = Symbol.(arrays["species"])
+    # else
+    #     atom_data[:atomic_symbol] = [Symbol(element(num).symbol) for num in Z]
+    # end
     if haskey(arrays, "mass")
-        atom_data[:atomic_mass] = arrays["mass"]u"u"
+        atom_data[:mass] = arrays["mass"]u"u"
     else
-        atom_data[:atomic_mass] = [element(num).atomic_mass for num in Z]
+        atom_data[:mass] = [element(num).atomic_mass for num in Z]
     end
     if haskey(arrays, "velocities")
         atom_data[:velocity] = collect(eachcol(arrays["velocities"])) * uVelocity
@@ -130,7 +135,7 @@ function Atoms(dict::Dict{String, Any})
     end
 
     for key in keys(arrays)
-        key in ("mass", "species", "Z", "pos", "velocities") && continue  # Already done
+        key in ("mass", "species", "Z", "atomic_symbol", "pos", "velocities") && continue  # Already done
         if key in ("vdw_radius", "covalent_radius")  # Add length unit
             atom_data[Symbol(key)] = arrays[key] * u"Å"
         elseif key in ("charge", )  # Add charge unit
@@ -146,16 +151,17 @@ function Atoms(dict::Dict{String, Any})
     if haskey(dict, "cell")
         system_data[:bounding_box] = collect(eachrow(dict["cell"]))u"Å"
         if haskey(dict, "pbc")
-            system_data[:boundary_conditions] = [p ? Periodic() : DirichletZero()
-                                                 for p in dict["pbc"]]
+            system_data[:periodicity] = tuple(dict["pbc"]...)
         else
             @warn "'pbc' not contained in dict. Defaulting to all-periodic boundary. "
-            system_data[:boundary_conditions] = fill(Periodic(), 3)
+            system_data[:periodicity] = (true, true, true)
         end
     else  # Infinite system
         haskey(dict, "pbc") && @warn "'pbc' ignored since no 'cell' entry found in dict."
-        system_data[:boundary_conditions] = fill(DirichletZero(), 3)
-        system_data[:bounding_box] = infinite_box(3)
+        system_data[:periodicity] = (false, false, false) 
+        system_data[:bounding_box] = ( SVector(Inf, 0.0, 0.0) * u"Å", 
+                                       SVector(0.0, Inf, 0.0) * u"Å", 
+                                       SVector(0.0, 0.0, Inf) * u"Å" )
     end
 
     for key in keys(info)
@@ -168,6 +174,7 @@ function Atoms(dict::Dict{String, Any})
 
     Atoms(NamedTuple(atom_data), NamedTuple(system_data))
 end
+
 read_dict(dict::Dict{String,Any}) = Atoms(dict)
 
 function write_dict(atoms::Atoms)
@@ -179,8 +186,8 @@ function write_dict(atoms::Atoms)
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
-    if atoms.atom_data.atomic_mass != [element(Z).atomic_mass for Z in arrays["Z"]]
-        arrays["mass"] = ustrip.(u"u", atoms.atom_data.atomic_mass)
+    if atoms.atom_data.mass != [element(Z).atomic_mass for Z in arrays["Z"]]
+        arrays["mass"] = ustrip.(u"u", atoms.atom_data.mass)
     end
 
     arrays["velocities"] = zeros(D, length(atoms))
@@ -193,7 +200,8 @@ function write_dict(atoms::Atoms)
     end
 
     for (k, v) in pairs(atoms.atom_data)
-        k in (:atomic_mass, :atomic_symbol, :atomic_number, :position, :velocity) && continue
+        k in (:mass, :atomic_mass, :atomic_symbol, :atomic_number, :position, 
+              :velocity, :species) && continue
         if k in (:vdw_radius, :covalent_radius)  # Remove length unit
             arrays[string(k)] = ustrip.(u"Å", v)
         elseif k in (:charge, )
@@ -207,10 +215,7 @@ function write_dict(atoms::Atoms)
         end
     end
 
-    pbc = zeros(Bool, D)
-    for (i, bc) in enumerate(atoms.system_data.boundary_conditions)
-        pbc[i] = bc isa Periodic
-    end
+    pbc = atoms.system_data.periodicity
     cell = zeros(D, D)
     for (i, bvector) in enumerate(atoms.system_data.bounding_box)
         cell[i, :] = ustrip.(u"Å", bvector)
@@ -219,7 +224,7 @@ function write_dict(atoms::Atoms)
     # Deal with other system keys
     info = Dict{String,Any}()
     for (k, v) in pairs(atoms.system_data)
-        k in (:boundary_conditions, :bounding_box) && continue # Already dealt with
+        k in (:periodicity, :bounding_box) && continue # Already dealt with
         if k in (:charge, )
             info[string(k)] = ustrip(u"e_au", atoms.system_data[k])
         elseif v isa ExtxyzType
@@ -236,7 +241,7 @@ function write_dict(atoms::Atoms)
         end
     end
     dict = Dict("N_atoms" => length(atoms),
-                "pbc"     => pbc,
+                "pbc"     => [pbc...],
                 "info"    => info,
                 "arrays"  => arrays)
     all(cell .!= Inf) && (dict["cell"] = cell) # only write cell if its finite
@@ -249,30 +254,38 @@ write_dict(system::AbstractSystem{D}) = write_dict(Atoms(system))
 Base.length(sys::Atoms) = length(sys.atom_data.position)
 Base.size(sys::Atoms)   = (length(sys), )
 AtomsBase.bounding_box(sys::Atoms) = sys.system_data.bounding_box
-AtomsBase.boundary_conditions(sys::Atoms) = sys.system_data.boundary_conditions
+AtomsBase.periodicity(sys::Atoms) = sys.system_data.periodicity
 
-AtomsBase.species_type(::FS) where {FS <: Atoms} = AtomView{FS}
+# AtomsBase now requires a cell object to be returned instead of bounding_box 
+# and boundary conditions. But this can just be constructed on the fly. 
+AtomsBase.cell(sys::Atoms) = AtomsBase.PeriodicCell(; 
+                cell_vectors = sys.system_data.bounding_box, 
+                 periodicity = sys.system_data.periodicity )
+
 Base.getindex(sys::Atoms, x::Symbol) = getindex(sys.system_data, x)
 Base.haskey(sys::Atoms, x::Symbol)   = haskey(sys.system_data, x)
 Base.keys(sys::Atoms) = keys(sys.system_data)
 
 Base.getindex(sys::Atoms, i::Integer) = AtomView(sys, i)
 Base.getindex(sys::Atoms, i::Integer, x::Symbol) = getindex(sys.atom_data, x)[i]
+Base.getindex(sys::Atoms, i::AbstractVector{<: Integer}, x::Symbol) = getindex(sys.atom_data, x)[i]
 Base.getindex(sys::Atoms, ::Colon,    x::Symbol) = getindex(sys.atom_data, x)
 
 AtomsBase.atomkeys(sys::Atoms) = keys(sys.atom_data)
 AtomsBase.hasatomkey(sys::Atoms, x::Symbol) = haskey(sys.atom_data, x)
 
-AtomsBase.position(s::Atoms)                  = Base.getindex(s, :, :position)
-AtomsBase.position(s::Atoms, i::Integer)      = Base.getindex(s, i, :position)
-AtomsBase.velocity(s::Atoms)                  = Base.getindex(s, :, :velocity)
-AtomsBase.velocity(s::Atoms, i::Integer)      = Base.getindex(s, i, :velocity)
-AtomsBase.atomic_mass(s::Atoms)               = Base.getindex(s, :, :atomic_mass)
-AtomsBase.atomic_mass(s::Atoms, i::Integer)   = Base.getindex(s, i, :atomic_mass)
-AtomsBase.atomic_symbol(s::Atoms)             = Base.getindex(s, :, :atomic_symbol)
-AtomsBase.atomic_symbol(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_symbol)
-AtomsBase.atomic_number(s::Atoms)             = Base.getindex(s, :, :atomic_number)
-AtomsBase.atomic_number(s::Atoms, i::Integer) = Base.getindex(s, i, :atomic_number)
+const _IDX = Union{Colon, Integer, AbstractArray{<: Integer}}
+AtomsBase.position(s::Atoms, i::_IDX)      = getindex(s, i, :position)
+AtomsBase.velocity(s::Atoms, i::_IDX)      = getindex(s, i, :velocity)
+AtomsBase.mass(s::Atoms, i::_IDX)          = getindex(s, i, :mass)
+AtomsBase.atomic_symbol(s::Atoms, i::_IDX) = getindex(s, i, :atomic_symbol)
+AtomsBase.atomic_number(s::Atoms, i::_IDX) = getindex(s, i, :atomic_number)
+
+# AtomsBase now requires the `species` function to be implemented. Since 
+# ExtXYZ requires that atoms are uniquely identified by their atomic number, we 
+# will use the atomic number as the species identifier.
+AtomsBase.species(s::Atoms, i::_IDX) = 
+            AtomsBase.ChemicalSpecies.(AtomsBase.atomic_symbol(s, i))
 
 # --------- FileIO compatible interface (hence not exported)
 

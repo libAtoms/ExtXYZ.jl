@@ -359,7 +359,7 @@ function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
     nat = Cint(nat)
     cinfo = convert(Ptr{DictEntry}, info; transpose_arrays=true)
 
-    # ensure "species" goes in column 1 and "pos" goes in column 2
+    # ensure "species" (symbol!) goes in column 1 and "pos" goes in column 2
     ordered_keys = collect(keys(arrays))
     species_idx = findfirst(isequal("species"), ordered_keys)
     ordered_keys[1], ordered_keys[species_idx] = ordered_keys[species_idx], ordered_keys[1]
