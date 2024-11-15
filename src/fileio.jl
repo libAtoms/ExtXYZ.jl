@@ -34,6 +34,9 @@ function cfopen(f::Function, filename::String, mode::String="r")
 end
 
 function cfopen(f::Function, iob::IOBuffer, mode::String="r")
+    @static if Sys.iswindows()
+        throw(ErrorException("Reading frames from IOBuffers is not supported on Windows."))
+    end
     fp = ccall(:fmemopen, Ptr{Cvoid}, (Ptr{Cvoid}, Cint, Cstring), pointer(iob.data, iob.ptr), iob.size, mode)
     try
         f(fp)
@@ -267,7 +270,9 @@ end
     read_frame(file)
 
 Read a single frame from the ExtXYZ file `file`, which can be a file pointer,
-open IO stream or a string filename.
+an open IO stream, a string filename or an IOBuffer.
+
+Reading from IOBuffers is currently not supported on Windows.
 """
 function read_frame(fp::Ptr{Cvoid}; verbose=false)
     nat, info, arrays = try
@@ -351,6 +356,8 @@ iread_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = iread_frames(fi
 Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename, IOStream or IOBuffer.
 
 `range` can be a single integer, range object or integer array of frame indices.
+
+Reading from IOBuffers is currently not supported on Windows.
 """
 read_frames(fp::Ptr{Cvoid}, range; kwargs...) = collect(iread_frames(fp, range; kwargs...))
 

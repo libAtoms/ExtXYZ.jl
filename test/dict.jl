@@ -66,8 +66,12 @@ Si        13.00000000      14.00000000      $(frame+1).00000000          0      
             @test all(seq1 .== seq3)
 
             iob = IOBuffer(read(infile, String))
-            seq4 = read_frames(iob)
-            @test all(seq1 .== seq4)
+            @static if Sys.iswindows()
+                @test_throws "not supported on Windows" read_frames(iob)
+            else
+                seq4 = read_frames(iob)
+                @test all(seq1 .== seq4)
+            end
         end
 
         @testset "convert" begin
