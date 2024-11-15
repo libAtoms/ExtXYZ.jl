@@ -33,6 +33,15 @@ function cfopen(f::Function, filename::String, mode::String="r")
     end
 end
 
+function ExtXYZ.cfopen(f::Function, iob::IOBuffer, mode::String="r")
+    fp = ccall(:fmemopen, Ptr{Cvoid}, (Ptr{Cvoid}, Cint, Cstring), pointer(iob.data, iob.ptr), iob.size, mode)
+    try
+        f(fp)
+    finally
+        ExtXYZ.cfclose(fp)
+    end
+end
+
 struct DictEntry
     key::Ptr{Cchar}
     data::Ptr{Cvoid}
@@ -291,8 +300,8 @@ function read_frame(fp::Ptr{Cvoid}; verbose=false)
     return dict
 end
 
-read_frame(file::Union{String,IOStream}, index; kwargs...) = only(read_frames(file, index; kwargs...))
-read_frame(file::Union{String,IOStream}; kwargs...) = read_frame(file, 1; kwargs...)
+read_frame(file::Union{String,IOStream,IOBuffer}, index; kwargs...) = only(read_frames(file, index; kwargs...))
+read_frame(file::Union{String,IOStream,IOBuffer}; kwargs...) = read_frame(file, 1; kwargs...)
 
 """
     iread_frames(file[, range])
@@ -327,33 +336,33 @@ function iread_frames(fp::Ptr{Cvoid}, range; close_fp=false, kwargs...)
     end
 end
 
-function iread_frames(file::Union{String,IOStream}, range; kwargs...)
+function iread_frames(file::Union{String,IOStream,IOBuffer}, range; kwargs...)
     fp = cfopen(file, "r")
     fp == C_NULL && error("file $file cannot be opened for reading")
     iread_frames(fp, range; close_fp=true, kwargs...)
 end
 
-iread_frames(file::Union{String,IOStream}, index::Int; kwargs...) = iread_frames(file, [index]; kwargs...)
-iread_frames(file::Union{String,IOStream}; kwargs...) = iread_frames(file, Iterators.countfrom(1); kwargs...)
+iread_frames(file::Union{String,IOStream,IOBuffer}, index::Int; kwargs...) = iread_frames(file, [index]; kwargs...)
+iread_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = iread_frames(file, Iterators.countfrom(1); kwargs...)
 
 """
     read_frames(file[, range])
 
-Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename or IOStream.
+Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename, IOStream or IOBuffer.
 
 `range` can be a single integer, range object or integer array of frame indices.
 """
 read_frames(fp::Ptr{Cvoid}, range; kwargs...) = collect(iread_frames(fp, range; kwargs...))
 
-function read_frames(file::Union{String,IOStream}, range; kwargs...)
+function read_frames(file::Union{String,IOStream,IOBuffer}, range; kwargs...)
     cfopen(file) do fp
         fp == C_NULL && error("file $file cannot be opened for reading")
         read_frames(fp, range; kwargs...)
     end
 end
 
-read_frames(file::Union{String,IOStream}, index::Int; kwargs...) = read_frames(file, [index]; kwargs...)
-read_frames(file::Union{String,IOStream}; kwargs...) = read_frames(file, Iterators.countfrom(1); kwargs...)
+read_frames(file::Union{String,IOStream,IOBuffer}, index::Int; kwargs...) = read_frames(file, [index]; kwargs...)
+read_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = read_frames(file, Iterators.countfrom(1); kwargs...)
 
 function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
     nat = Cint(nat)
