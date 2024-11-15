@@ -33,12 +33,12 @@ function cfopen(f::Function, filename::String, mode::String="r")
     end
 end
 
-function ExtXYZ.cfopen(f::Function, iob::IOBuffer, mode::String="r")
+function cfopen(f::Function, iob::IOBuffer, mode::String="r")
     fp = ccall(:fmemopen, Ptr{Cvoid}, (Ptr{Cvoid}, Cint, Cstring), pointer(iob.data, iob.ptr), iob.size, mode)
     try
         f(fp)
     finally
-        ExtXYZ.cfclose(fp)
+        cfclose(fp)
     end
 end
 
