@@ -289,9 +289,9 @@ AtomsBase.species(s::Atoms, i::_IDX) =
 
 # --------- FileIO compatible interface (hence not exported)
 
-load(file::Union{String,IOStream}, frame; kwargs...) = Atoms(read_frame(file, frame; kwargs...))
+load(file::Union{String,IOStream,IOBuffer}, frame; kwargs...) = Atoms(read_frame(file, frame; kwargs...))
 
-function load(file::Union{String,IOStream}; kwargs...)
+function load(file::Union{String,IOStream,IOBuffer}; kwargs...)
     seq = Atoms.(read_frames(file; kwargs...))
     if length(seq) == 1
         return seq[1]
