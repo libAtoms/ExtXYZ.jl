@@ -72,13 +72,13 @@ function Atoms(system::AbstractSystem{D})
     end
 
     system_data = Dict{Symbol,Any}(
-        :bounding_box => bounding_box(system),
+        :cell_vectors => cell_vectors(system),
         :periodicity => periodicity(system) 
     )
 
     # Extract extra system properties
     for (k, v) in pairs(system)
-        atoms_base_keys = (:charge, :multiplicity, :periodicity, :bounding_box)
+        atoms_base_keys = (:charge, :multiplicity, :periodicity, :cell_vectors)
         if k in atoms_base_keys || v isa ExtxyzType || v isa AbstractArray{<: ExtxyzType}
             # These are either Unitful quantities, which are uniformly supported
             # across all of AtomsBase or the value has a type that Extxyz can write
@@ -149,7 +149,7 @@ function Atoms(dict::Dict{String, Any})
 
     system_data = Dict{Symbol, Any}()
     if haskey(dict, "cell")
-        system_data[:bounding_box] = collect(eachrow(dict["cell"]))u"Å"
+        system_data[:cell_vectors] = collect(eachrow(dict["cell"]))u"Å"
         if haskey(dict, "pbc")
             system_data[:periodicity] = tuple(dict["pbc"]...)
         else
@@ -159,7 +159,7 @@ function Atoms(dict::Dict{String, Any})
     else  # Infinite system
         haskey(dict, "pbc") && @warn "'pbc' ignored since no 'cell' entry found in dict."
         system_data[:periodicity] = (false, false, false) 
-        system_data[:bounding_box] = ( SVector(Inf, 0.0, 0.0) * u"Å", 
+        system_data[:cell_vectors] = ( SVector(Inf, 0.0, 0.0) * u"Å", 
                                        SVector(0.0, Inf, 0.0) * u"Å", 
                                        SVector(0.0, 0.0, Inf) * u"Å" )
     end
@@ -217,14 +217,14 @@ function write_dict(atoms::Atoms)
 
     pbc = atoms.system_data.periodicity
     cell = zeros(D, D)
-    for (i, bvector) in enumerate(atoms.system_data.bounding_box)
+    for (i, bvector) in enumerate(atoms.system_data.cell_vectors)
         cell[i, :] = ustrip.(u"Å", bvector)
     end
 
     # Deal with other system keys
     info = Dict{String,Any}()
     for (k, v) in pairs(atoms.system_data)
-        k in (:periodicity, :bounding_box) && continue # Already dealt with
+        k in (:periodicity, :cell_vectors) && continue # Already dealt with
         if k in (:charge, )
             info[string(k)] = ustrip(u"e_au", atoms.system_data[k])
         elseif v isa ExtxyzType
@@ -253,14 +253,14 @@ write_dict(system::AbstractSystem{D}) = write_dict(Atoms(system))
 
 Base.length(sys::Atoms) = length(sys.atom_data.position)
 Base.size(sys::Atoms)   = (length(sys), )
-AtomsBase.bounding_box(sys::Atoms) = sys.system_data.bounding_box
+AtomsBase.cell_vectors(sys::Atoms) = sys.system_data.cell_vectors
 AtomsBase.periodicity(sys::Atoms) = sys.system_data.periodicity
 
 # AtomsBase now requires a cell object to be returned instead of bounding_box 
 # and boundary conditions. But this can just be constructed on the fly. 
 AtomsBase.cell(sys::Atoms) = AtomsBase.PeriodicCell(; 
-                cell_vectors = sys.system_data.bounding_box, 
-                 periodicity = sys.system_data.periodicity )
+                cell_vectors = cell_vectors(sys), 
+                 periodicity = periodicity(sys) )
 
 Base.getindex(sys::Atoms, x::Symbol) = getindex(sys.system_data, x)
 Base.haskey(sys::Atoms, x::Symbol)   = haskey(sys.system_data, x)
