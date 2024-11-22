@@ -27,7 +27,6 @@ end
 end
 
 @testset "Conversion AtomsBase -> dict (velocity)" begin
-    #system, atoms, atprop, sysprop, box, bcs = make_test_system()
     tmp = make_test_system()
     system = tmp.system
     atoms  = tmp.atoms
