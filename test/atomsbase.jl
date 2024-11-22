@@ -15,7 +15,7 @@ function simple_test_approx_eq(sys1, sys2; test_cell = true)
     @test atomic_number(sys1, :) == atomic_number(sys2, :)
     @test atomic_symbol(sys1, :) == atomic_symbol(sys2, :)
     @test periodicity(sys1) == periodicity(sys2)
-    @test all(bounding_box(sys1) .≈ bounding_box(sys2))
+    @test all(cell_vectors(sys1) .≈ cell_vectors(sys2))
     if test_cell 
         @test cell(sys1) == cell(sys2)
     end
@@ -27,7 +27,14 @@ end
 end
 
 @testset "Conversion AtomsBase -> dict (velocity)" begin
-    system, atoms, atprop, sysprop, box, bcs = make_test_system()
+    #system, atoms, atprop, sysprop, box, bcs = make_test_system()
+    tmp = make_test_system()
+    system = tmp.system
+    atoms  = tmp.atoms
+    atprop = tmp.atprop
+    sysprop = tmp.sysprop
+    box = tmp.cell.cell_vectors
+    bcs = tmp.cell.periodicity
     atoms = ExtXYZ.write_dict(Atoms(system))
 
     c3ll = zeros(3, 3)
@@ -47,8 +54,8 @@ end
     @test info["multiplicity"] == sysprop.multiplicity
 
     arrays = atoms["arrays"]
-    @test arrays["Z"]          == AtomsBase.atomic_number.(atprop.atomic_symbol)
-    @test arrays["species"]    == string.(atprop.atomic_symbol)
+    @test arrays["Z"]          == AtomsBase.atomic_number.(atprop.species)
+    @test arrays["species"]    == string.(atprop.species)
     # mass is not written to the dict because the mass == mass(element)
     # @test arrays["mass"]       == ustrip.(u"u",  atprop.atomic_mass)
     @test arrays["pos"]        ≈  ustrip.(u"Å",  hcat(atprop.position...)) atol=1e-10
@@ -56,7 +63,7 @@ end
                                           hcat(atprop.velocity...)) atol=1e-10
 
     expected_atkeys = ["Z", "species", "charge", "covalent_radius", 
-                       "magnetic_moment", "pos", "vdw_radius", "velocities"]
+                       "magnetic_moment", "mass", "pos", "vdw_radius", "velocities"]
     @test sort(collect(keys(arrays))) == sort(expected_atkeys)
     @test arrays["magnetic_moment"] == atprop.magnetic_moment
     @test arrays["vdw_radius"]      == ustrip.(u"Å", atprop.vdw_radius)
@@ -89,7 +96,6 @@ end
     atoms = @test_logs((:warn, r"Unitful quantity massdata is not yet"),
                        (:warn, r"Writing quantities of type Symbol"),
                        (:warn, r"Unitful quantity md is not yet"),
-                       (:warn, r"Mismatch between atomic numbers and atomic symbols"),
                        match_mode=:any, ExtXYZ.write_dict(Atoms(system)))
 
     @test atoms["arrays"]["species"] == ["H", "H", "C", "N", "He"]
@@ -156,7 +162,7 @@ end
         end
 
         atoms = ExtXYZ.load(fname)
-        box = bounding_box(atoms)
+        box = cell_vectors(atoms)
         @test [box[dim][dim] for dim=1:3] == [Inf * u"bohr" for dim=1:3]
     finally
         isfile(fname) && rm(fname)
