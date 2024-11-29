@@ -89,12 +89,13 @@ end
 end
 
 @testset "Warning about setting invalid data" begin
+    species = ChemicalSpecies.([:D, :H, :C, :N, :He])
     system = make_test_system(; extra_sysprop=(md=3u"u", symboldata=:abc),
-                                extra_atprop=(massdata=3ones(5)u"u",
-                                              atomic_symbol=[:D, :H, :C, :N, :He])).system
+                              extra_atprop=(massdata=3ones(5)u"u", species)).system
     atoms = @test_logs((:warn, r"Unitful quantity massdata is not yet"),
                        (:warn, r"Writing quantities of type Symbol"),
                        (:warn, r"Unitful quantity md is not yet"),
+                       (:warn, r"Mismatch between atomic numbers and atomic symbols"),
                        match_mode=:any, ExtXYZ.write_dict(Atoms(system)))
 
     @test atoms["arrays"]["species"] == ["H", "H", "C", "N", "He"]

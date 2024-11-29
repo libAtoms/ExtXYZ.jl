@@ -35,7 +35,7 @@ function Atoms(system::AbstractSystem{D})
     atom_data = Dict{Symbol,Any}(
         :atomic_symbol => atomic_symbols,
         :atomic_number => Int.(atomic_number(system, :)),  # gets messy if not Int
-        :species => s, 
+        :species => s,
         :mass   => mass(system, :)
     )
     atom_data[:position] = map(1:n_atoms) do at
