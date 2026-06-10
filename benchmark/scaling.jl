@@ -57,7 +57,7 @@ function c_parse_time(file; use_regex=true)
 end
 
 mkpath(DIR)
-println("natoms,file_mb,write_s,read_regex_s,read_tok_s,c_parse_s,dicts_s")
+println("natoms,file_mb,write_s,read_regex_s,read_tok_s,c_parse_s,dicts_s,load_s,save_s")
 for natoms in SIZES
     frame = make_frame(natoms)
     file = joinpath(DIR, "bench_$natoms.xyz")
@@ -67,5 +67,9 @@ for natoms in SIZES
     t_tok   = best_of(() -> read_frames(file; use_regex=false))
     t_c     = best_of(() -> c_parse_time(file))
     t_dicts = best_of(() -> ExtXYZ.cfopen(fp -> ExtXYZ.read_frame_dicts(fp), file, "r"))
-    @printf "%d,%.6f,%.6g,%.6g,%.6g,%.6g,%.6g\n" natoms mb t_write t_read t_tok t_c t_dicts
+    t_load  = best_of(() -> ExtXYZ.load(file))
+    sys     = ExtXYZ.load(file, 1)
+    outfile = joinpath(DIR, "out_atoms_$natoms.xyz")
+    t_save  = best_of(() -> ExtXYZ.save(outfile, sys))
+    @printf "%d,%.6f,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g,%.6g\n" natoms mb t_write t_read t_tok t_c t_dicts t_load t_save
 end
