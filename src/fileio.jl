@@ -264,6 +264,10 @@ function _is_eof_message(msg::AbstractString)
     return m !== nothing && all(isspace, m[1])
 end
 
+# Returns (nat, info, arrays), or `nothing` at end of file. EOF is signalled
+# by a return value rather than an EOFError because every file read ends with
+# one EOF attempt, and a Julia throw/catch costs tens of microseconds - the
+# dominant cost for small single-frame files.
 function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_regex=true)
     nat = Ref{Cint}(0)
     info = Ref{Ptr{DictEntry}}()
@@ -281,11 +285,8 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_re
             # finally block below must not free them again
             failed = true
             msg = GC.@preserve error_message unsafe_string(pointer(error_message))
-            if _is_eof_message(msg)
-                throw(EOFError())
-            else
-                error("extxyz parse error: $msg")
-            end
+            _is_eof_message(msg) && return nothing
+            error("extxyz parse error: $msg")
         end
         if nat[] == 0
             failed = true
@@ -343,15 +344,10 @@ Malformed input raises an `ErrorException` containing the parser's message.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
-function read_frame(fp::Ptr{Cvoid}; verbose=false, kwargs...)
-    nat, info, arrays = try
-        read_frame_dicts(fp; verbose=verbose, kwargs...)
-    catch err
-        if isa(err, EOFError) 
-            return nothing
-        end
-        rethrow()
-    end
+function read_frame(fp::Ptr{Cvoid}; verbose::Bool=false, use_regex::Bool=true)
+    ret = read_frame_dicts(fp; verbose=verbose, use_regex=use_regex)
+    ret === nothing && return nothing  # end of file
+    nat, info, arrays = ret
 
     dict = Dict{String, Any}()
     dict["N_atoms"] = nat # number of atoms
@@ -432,25 +428,26 @@ Reading from IOBuffers is currently not supported on Windows.
 """
 # read directly rather than collecting iread_frames: the Channel costs a task
 # switch per frame (~25% on trajectories of small frames) and buys nothing
-# when the result is materialised anyway
-function read_frames(fp::Ptr{Cvoid}, range; kwargs...)
+# when the result is materialised anyway. Keywords are explicit and typed:
+# a kwargs... splat through these layers costs a dynamic dispatch per frame.
+function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool=true)
     frames = Dict{String,Any}[]
     for _ in 1:first(range)-1
-        atoms = read_frame(fp; kwargs...)
+        atoms = read_frame(fp; verbose=verbose, use_regex=use_regex)
         atoms === nothing && return frames
     end
     for _ in range
-        atoms = read_frame(fp; kwargs...)
+        atoms = read_frame(fp; verbose=verbose, use_regex=use_regex)
         atoms === nothing && break
         push!(frames, atoms)
     end
     return frames
 end
 
-function read_frames(file::Union{String,IOStream,IOBuffer}, range; kwargs...)
+function read_frames(file::Union{String,IOStream,IOBuffer}, range; verbose::Bool=false, use_regex::Bool=true)
     cfopen(file) do fp
         fp == C_NULL && error("file $file cannot be opened for reading")
-        read_frames(fp, range; kwargs...)
+        read_frames(fp, range; verbose=verbose, use_regex=use_regex)
     end
 end
 
