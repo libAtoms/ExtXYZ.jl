@@ -430,7 +430,18 @@ See [`read_frame`](@ref) for the meaning of `use_regex`.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
-read_frames(fp::Ptr{Cvoid}, range; kwargs...) = collect(iread_frames(fp, range; kwargs...))
+function read_frames(fp::Ptr{Cvoid}, range; kwargs...)
+    try
+        collect(iread_frames(fp, range; kwargs...))
+    catch e
+        # unwrap failures from the Channel task so callers see the original
+        # exception (e.g. a parse error) rather than a TaskFailedException
+        while e isa TaskFailedException
+            e = e.task.exception
+        end
+        throw(e)
+    end
+end
 
 function read_frames(file::Union{String,IOStream,IOBuffer}, range; kwargs...)
     cfopen(file) do fp
