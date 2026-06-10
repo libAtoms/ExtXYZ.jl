@@ -1,16 +1,33 @@
 using extxyz_jll
 
-cfopen(filename::String, mode::String) = ccall(:fopen, 
-                                               Ptr{Cvoid},
-                                               (Cstring, Cstring),
-                                               filename, mode)
-                                                
-function cfclose(fp::Ptr{Cvoid}) 
-    (fp == C_NULL) && return
-    ccall(:fclose,
-          Cint,
-          (Ptr{Cvoid},),
-          fp)
+# On Windows, route fopen/fclose through libextxyz's wrappers so the FILE*
+# is created and consumed by the same C runtime as extxyz_read_ll/extxyz_write_ll.
+@static if Sys.iswindows()
+    cfopen(filename::String, mode::String) = ccall((:extxyz_fopen, libextxyz),
+                                                   Ptr{Cvoid},
+                                                   (Cstring, Cstring),
+                                                   filename, mode)
+
+    function cfclose(fp::Ptr{Cvoid})
+        (fp == C_NULL) && return
+        ccall((:extxyz_fclose, libextxyz),
+              Cint,
+              (Ptr{Cvoid},),
+              fp)
+    end
+else
+    cfopen(filename::String, mode::String) = ccall(:fopen,
+                                                   Ptr{Cvoid},
+                                                   (Cstring, Cstring),
+                                                   filename, mode)
+
+    function cfclose(fp::Ptr{Cvoid})
+        (fp == C_NULL) && return
+        ccall(:fclose,
+              Cint,
+              (Ptr{Cvoid},),
+              fp)
+    end
 end
 
 function cfopen(f::Function, iostream::IOStream, mode::String="r")
@@ -114,16 +131,35 @@ function convert(::Type{Dict{String,Any}}, c_dict::Ptr{DictEntry}; transpose_arr
                 dims = (node.nrows, node.ncols)
             end
 
-            value = unsafe_wrap(Array, 
-                                reinterpret(Ptr{TYPE_MAP[node.data_t]}, node.data), 
-                                dims)
-
-            if node.data_t == DATA_S
-                value = unsafe_string.(value)
-            elseif node.data_t == DATA_B
-                value = convert(Array{Bool}, value)
+            if node.data_t == DATA_S && node.n_in_row < 0
+                # libextxyz >= 0.4 returns per-atom string columns as a single
+                # contiguous fixed-width NUL-padded buffer (cells in C row-major
+                # order); n_in_row holds the negated cell width. A cell whose
+                # string exactly fills the width has no NUL terminator, so the
+                # search must be bounded by the cell - never unsafe_string().
+                width = Int(-node.n_in_row)
+                ncells = prod(dims)
+                buf = unsafe_wrap(Array, Ptr{UInt8}(node.data), width * ncells)
+                value = map(1:ncells) do i
+                    cell = view(buf, (i-1)*width+1 : i*width)
+                    nul = findfirst(iszero, cell)
+                    String(cell[1:(nul === nothing ? width : nul-1)])
+                end
+                # same linear (C row-major) layout as the unsafe_wrap branch,
+                # so the 2D reshape below applies unchanged
+                node.nrows != 0 && (value = reshape(value, dims))
             else
-                value = copy(value)
+                value = unsafe_wrap(Array,
+                                    reinterpret(Ptr{TYPE_MAP[node.data_t]}, node.data),
+                                    dims)
+
+                if node.data_t == DATA_S
+                    value = unsafe_string.(value)
+                elseif node.data_t == DATA_B
+                    value = convert(Array{Bool}, value)
+                else
+                    value = copy(value)
+                end
             end
 
             if node.nrows != 0 && node.ncols != 0
@@ -203,7 +239,10 @@ function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=n
         next_ptr = C_NULL
         idx != length(dict) && (next_ptr = Ptr{DictEntry}(Libc.malloc(sizeof(DictEntry))))
 
-        node = DictEntry(ckey, data, data_t, nrow, ncol, 
+        # n_in_row = 0 marks string data as the legacy char** layout (one
+        # malloc per cell, as built by Cvalue above); the C writer and
+        # free_dict only treat data as a contiguous buffer when n_in_row < 0
+        node = DictEntry(ckey, data, data_t, nrow, ncol,
                          next_ptr, C_NULL, C_NULL, 0)
         unsafe_store!(node_ptr, node) # in place mutation of node_ptr
         node_ptr = next_ptr
@@ -211,19 +250,42 @@ function convert(::Type{Ptr{DictEntry}}, dict::Dict{String}{Any}; ordered_keys=n
     return c_dict_ptr
 end
 
-function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing)
+# Error message emitted by libextxyz when the natoms header line cannot be
+# parsed, quoting the offending line. Used to tell end-of-file apart from a
+# genuine parse error: an empty buffer (true EOF) or a quoted line that is all
+# whitespace (trailing blank lines) means EOF, anything else is a parse error.
+# The text must match the C library verbatim (the Python bindings rely on the
+# same message).
+const _EOF_MESSAGE_RE = r"^Failed to parse int natoms from '(.*)'$"s
+
+function _is_eof_message(msg::AbstractString)
+    isempty(msg) && return true
+    m = match(_EOF_MESSAGE_RE, msg)
+    return m !== nothing && all(isspace, m[1])
+end
+
+function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_regex=true)
     nat = Ref{Cint}(0)
     info = Ref{Ptr{DictEntry}}()
     arrays = Ref{Ptr{DictEntry}}()
     failed = false
     (comment === nothing) && (comment = C_NULL)
+    # libextxyz writes diagnostics here with no NULL check - must be a real buffer
+    error_message = zeros(UInt8, 1024)
     try
-        res =  ccall((:extxyz_read_ll, libextxyz),
-                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}, Cstring),
-                      _kv_grammar[], fp, nat, info, arrays, comment)
+        res =  ccall((:extxyz_read_ll_opts, libextxyz),
+                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}, Cstring, Ptr{UInt8}, Cint),
+                      _kv_grammar[], fp, nat, info, arrays, comment, error_message, use_regex ? 0 : 1)
         if res != 1
+            # on failure the C library frees the partial dicts itself, so the
+            # finally block below must not free them again
             failed = true
-            throw(EOFError())
+            msg = GC.@preserve error_message unsafe_string(pointer(error_message))
+            if _is_eof_message(msg)
+                throw(EOFError())
+            else
+                error("extxyz parse error: $msg")
+            end
         end
         if nat[] == 0
             failed = true
@@ -267,16 +329,23 @@ function extract_lattice!(result_dict)
 end
 
 """
-    read_frame(file)
+    read_frame(file; use_regex=true)
 
 Read a single frame from the ExtXYZ file `file`, which can be a file pointer,
 an open IO stream, a string filename or an IOBuffer.
 
+Keyword arguments:
+- `use_regex`: if `true` (default), per-atom lines are parsed with PCRE2 regular
+  expressions. If `false`, a faster whitespace tokenizer is used instead; it
+  still validates each field but is marginally more lenient on numeric formats.
+
+Malformed input raises an `ErrorException` containing the parser's message.
+
 Reading from IOBuffers is currently not supported on Windows.
 """
-function read_frame(fp::Ptr{Cvoid}; verbose=false)
+function read_frame(fp::Ptr{Cvoid}; verbose=false, kwargs...)
     nat, info, arrays = try
-        read_frame_dicts(fp; verbose=verbose)
+        read_frame_dicts(fp; verbose=verbose, kwargs...)
     catch err
         if isa(err, EOFError) 
             return nothing
@@ -309,10 +378,11 @@ read_frame(file::Union{String,IOStream,IOBuffer}, index; kwargs...) = only(read_
 read_frame(file::Union{String,IOStream,IOBuffer}; kwargs...) = read_frame(file, 1; kwargs...)
 
 """
-    iread_frames(file[, range])
+    iread_frames(file[, range]; use_regex=true)
 
 Return a Channel for reading from an ExtXYZ file. Frames are yielded one by one.
 `range` can be a single integer, range object or integer array of frame indices.
+See [`read_frame`](@ref) for the meaning of `use_regex`.
 
 Example usage:
 
@@ -351,11 +421,12 @@ iread_frames(file::Union{String,IOStream,IOBuffer}, index::Int; kwargs...) = ire
 iread_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = iread_frames(file, Iterators.countfrom(1); kwargs...)
 
 """
-    read_frames(file[, range])
+    read_frames(file[, range]; use_regex=true)
 
 Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename, IOStream or IOBuffer.
 
 `range` can be a single integer, range object or integer array of frame indices.
+See [`read_frame`](@ref) for the meaning of `use_regex`.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
@@ -371,7 +442,13 @@ end
 read_frames(file::Union{String,IOStream,IOBuffer}, index::Int; kwargs...) = read_frames(file, [index]; kwargs...)
 read_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = read_frames(file, Iterators.countfrom(1); kwargs...)
 
-function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
+# C printf-style format string, or C_NULL to use the library default;
+# strings are passed through so that ccall roots them for the call duration
+_cfmt(fmt::AbstractString) = fmt
+_cfmt(::Nothing) = Cstring(C_NULL)
+
+function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false,
+                           fmt_i=nothing, fmt_f=nothing, fmt_b=nothing, fmt_s=nothing)
     nat = Cint(nat)
     cinfo = convert(Ptr{DictEntry}, info; transpose_arrays=true)
 
@@ -388,8 +465,9 @@ function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
         cprint_dict(carrays)
     end
     try
-        res = ccall((:extxyz_write_ll, libextxyz),
-                     Cint, (Ptr{Cvoid}, Cint, Ptr{DictEntry}, Ptr{DictEntry}), fp, nat, cinfo, carrays)
+        res = ccall((:extxyz_write_ll_fmt, libextxyz),
+                     Cint, (Ptr{Cvoid}, Cint, Ptr{DictEntry}, Ptr{DictEntry}, Cstring, Cstring, Cstring, Cstring),
+                     fp, nat, cinfo, carrays, _cfmt(fmt_i), _cfmt(fmt_f), _cfmt(fmt_b), _cfmt(fmt_s))
         res != 0 && error("error writing to file")
     finally
         cfree_dict(cinfo)
@@ -398,24 +476,30 @@ function write_frame_dicts(fp::Ptr{Cvoid}, nat, info, arrays; verbose=false)
 end
 
 """
-    write_frame(file, dict)
+    write_frame(file, dict; fmt_i=nothing, fmt_f=nothing, fmt_b=nothing, fmt_s=nothing)
 
-Write a single atomic configuration represented by `dict` to `file`, which 
+Write a single atomic configuration represented by `dict` to `file`, which
 can be a file pointer, open IO stream or string filename.
+
+The `fmt_*` keyword arguments accept C printf-style format strings overriding
+the output format for integer, float, bool and string values respectively
+(e.g. `fmt_f="%21.16f"` for full double precision). When `nothing` (default),
+the library defaults are used (`"%8d"`, `"%16.8f"`, `"%.1s"`, `"%s"`).
 """
-function write_frame(fp::Ptr{Cvoid}, dict; verbose=false)
+function write_frame(fp::Ptr{Cvoid}, dict; kwargs...)
     nat = dict["N_atoms"]
     info = copy(dict["info"])
     if ("cell" in keys(dict)) info["Lattice"] = permutedims(dict["cell"], (2, 1)) end
     info["pbc"] = get(dict, "pbc", [true, true, true])
 
-    write_frame_dicts(fp, nat, info, dict["arrays"]; verbose=verbose)
+    write_frame_dicts(fp, nat, info, dict["arrays"]; kwargs...)
 end
 
 """
-    write_frames(file, dicts)
+    write_frames(file, dicts; append=false, fmt_i=nothing, fmt_f=nothing, fmt_b=nothing, fmt_s=nothing)
 
-Write a sequence of atomic configurations to `file`. Can also be used asynchronously
+Write a sequence of atomic configurations to `file`. See [`write_frame`](@ref)
+for the meaning of the `fmt_*` format-string keywords. Can also be used asynchronously
 by passing a Channel in place of `dicts`, e.g.
 
 ```julia
