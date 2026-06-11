@@ -268,7 +268,7 @@ end
 # by a return value rather than an EOFError because every file read ends with
 # one EOF attempt, and a Julia throw/catch costs tens of microseconds - the
 # dominant cost for small single-frame files.
-function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_regex=true)
+function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_regex=false)
     nat = Ref{Cint}(0)
     info = Ref{Ptr{DictEntry}}()
     arrays = Ref{Ptr{DictEntry}}()
@@ -330,21 +330,22 @@ function extract_lattice!(result_dict)
 end
 
 """
-    read_frame(file; use_regex=true)
+    read_frame(file; use_regex=false)
 
 Read a single frame from the ExtXYZ file `file`, which can be a file pointer,
 an open IO stream, a string filename or an IOBuffer.
 
 Keyword arguments:
-- `use_regex`: if `true` (default), per-atom lines are parsed with PCRE2 regular
-  expressions. If `false`, a faster whitespace tokenizer is used instead; it
-  still validates each field but is marginally more lenient on numeric formats.
+- `use_regex`: if `false` (default), per-atom lines are parsed with a fast
+  whitespace tokenizer that validates each field. If `true`, the stricter but
+  slower PCRE2 regular-expression parser is used instead; it is marginally
+  more rigid about numeric formats.
 
 Malformed input raises an `ErrorException` containing the parser's message.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
-function read_frame(fp::Ptr{Cvoid}; verbose::Bool=false, use_regex::Bool=true)
+function read_frame(fp::Ptr{Cvoid}; verbose::Bool=false, use_regex::Bool=false)
     ret = read_frame_dicts(fp; verbose=verbose, use_regex=use_regex)
     ret === nothing && return nothing  # end of file
     nat, info, arrays = ret
@@ -374,7 +375,7 @@ read_frame(file::Union{String,IOStream,IOBuffer}, index; kwargs...) = only(read_
 read_frame(file::Union{String,IOStream,IOBuffer}; kwargs...) = read_frame(file, 1; kwargs...)
 
 """
-    iread_frames(file[, range]; use_regex=true)
+    iread_frames(file[, range]; use_regex=false)
 
 Return a Channel for reading from an ExtXYZ file. Frames are yielded one by one.
 `range` can be a single integer, range object or integer array of frame indices.
@@ -417,7 +418,7 @@ iread_frames(file::Union{String,IOStream,IOBuffer}, index::Int; kwargs...) = ire
 iread_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = iread_frames(file, Iterators.countfrom(1); kwargs...)
 
 """
-    read_frames(file[, range]; use_regex=true)
+    read_frames(file[, range]; use_regex=false)
 
 Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename, IOStream or IOBuffer.
 
@@ -430,7 +431,7 @@ Reading from IOBuffers is currently not supported on Windows.
 # switch per frame (~25% on trajectories of small frames) and buys nothing
 # when the result is materialised anyway. Keywords are explicit and typed:
 # a kwargs... splat through these layers costs a dynamic dispatch per frame.
-function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool=true)
+function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool=false)
     frames = Dict{String,Any}[]
     for _ in 1:first(range)-1
         atoms = read_frame(fp; verbose=verbose, use_regex=use_regex)
@@ -444,7 +445,7 @@ function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool
     return frames
 end
 
-function read_frames(file::Union{String,IOStream,IOBuffer}, range; verbose::Bool=false, use_regex::Bool=true)
+function read_frames(file::Union{String,IOStream,IOBuffer}, range; verbose::Bool=false, use_regex::Bool=false)
     cfopen(file) do fp
         fp == C_NULL && error("file $file cannot be opened for reading")
         read_frames(fp, range; verbose=verbose, use_regex=use_regex)

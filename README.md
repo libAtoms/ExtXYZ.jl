@@ -32,9 +32,9 @@ Please open issues/PRs here with suggestions of other packages it would be usefu
 Four key functions are exported: `read_frame()` and `write_frame()` for reading and writing single configurations (snapshots), respectively, and `read_frames()` and `write_frames()` for reading and writing trajectories. Moreover `ExtXYZ.Atoms` provides a datastructure to expose the read configurations in an [AtomsBase](https://github.com/JuliaMolSim/AtomsBase.jl)-compatible manner.
 All read and write functions can work with string filenames, an open `Base.IO` instance or (intended primarily for internal use) a C `FILE*` pointer, stored as a `Ptr{Cvoid}` type.
 
-The read functions accept a `use_regex::Bool=true` keyword: passing `false` selects a faster
-whitespace tokenizer for per-atom lines instead of the default PCRE2 regex parser (the tokenizer
-still validates each field, but is marginally more lenient on numeric formats). The write
+The read functions accept a `use_regex::Bool=false` keyword: by default per-atom lines are
+parsed with a fast whitespace tokenizer that validates each field; passing `true` selects the
+stricter but slower PCRE2 regex parser instead (marginally more rigid on numeric formats). The write
 functions accept C printf-style format-string keywords `fmt_i`, `fmt_f`, `fmt_b` and `fmt_s` to
 override the output format per data type, e.g. `write_frame(file, frame; fmt_f="%21.16f")` for
 full double precision. Malformed input raises an `ErrorException` containing the C parser's

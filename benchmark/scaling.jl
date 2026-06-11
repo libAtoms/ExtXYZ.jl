@@ -63,10 +63,10 @@ for natoms in SIZES
     file = joinpath(DIR, "bench_$natoms.xyz")
     t_write = best_of(() -> write_frames(file, [frame]))
     mb = filesize(file) / 1e6
-    t_read  = best_of(() -> read_frames(file))
+    t_read  = best_of(() -> read_frames(file; use_regex=true))
     t_tok   = best_of(() -> read_frames(file; use_regex=false))
     t_c     = best_of(() -> c_parse_time(file))
-    t_dicts = best_of(() -> ExtXYZ.cfopen(fp -> ExtXYZ.read_frame_dicts(fp), file, "r"))
+    t_dicts = best_of(() -> ExtXYZ.cfopen(fp -> ExtXYZ.read_frame_dicts(fp; use_regex=true), file, "r"))
     t_load  = best_of(() -> ExtXYZ.load(file))
     sys     = ExtXYZ.load(file, 1)
     outfile = joinpath(DIR, "out_atoms_$natoms.xyz")
