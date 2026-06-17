@@ -17,7 +17,7 @@ PeriodicTable = "1"
 StaticArrays = "1.5"
 Unitful = "1"
 UnitfulAtomic = "1"
-extxyz_jll = "0.4"  # TODO(release): tighten to "0.4.4" once that jll registers (9-arg use_cleri API needs libextxyz >= 0.4.4)
+extxyz_jll = "0.4.4"
 julia = "1"
 
 [extras]
