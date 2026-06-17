@@ -95,6 +95,14 @@ function Atoms(system::AbstractSystem{D})
 end
 
 
+# view an N_component x N_atoms matrix as a Vector of per-atom SVectors
+# without copying the per-atom data into N separate heap arrays
+_as_svectors(A::AbstractMatrix{T}) where {T} =
+    collect(reinterpret(reshape, SVector{size(A, 1), T}, Matrix(A)))
+# hand-built dicts may already hold per-atom data as a vector of vectors
+_as_svectors(A::AbstractVector{<:AbstractVector{T}}) where {T} =
+    [SVector{length(v), T}(v) for v in A]
+
 function Atoms(dict::Dict{String, Any})
     arrays = dict["arrays"]
     info   = dict["info"]
@@ -102,16 +110,21 @@ function Atoms(dict::Dict{String, Any})
     if haskey(arrays, "Z")
         Z = Int.(arrays["Z"])
     elseif haskey(arrays, "species")
-        Z = [element(Symbol(spec)).number for spec in arrays["species"]]
+        # cache PeriodicTable lookups over the unique species only
+        number = Dict(spec => element(Symbol(spec)).number for spec in unique(arrays["species"]))
+        Z = [number[spec] for spec in arrays["species"]]
     else
         error("Cannot determine atomic numbers. Either 'Z' or 'S' must " *
               "be present in arrays")
     end
     @assert length(Z) == dict["N_atoms"]
 
-    atomic_symbols = [Symbol(element(num).symbol) for num in Z]
+    symbol = Dict(num => Symbol(element(num).symbol) for num in unique(Z))
+    atomic_symbols = [symbol[num] for num in Z]
+    # SVector elements are isbits, so each property is a single contiguous
+    # allocation rather than one small heap array per atom
     atom_data = Dict{Symbol, Any}(
-        :position      => collect(eachcol(arrays["pos"]))u"Å",
+        :position      => _as_svectors(arrays["pos"])u"Å",
         :atomic_number => Z,
         :atomic_symbol => atomic_symbols,
         :species       => AtomsBase.ChemicalSpecies.(atomic_symbols)
@@ -126,12 +139,13 @@ function Atoms(dict::Dict{String, Any})
     if haskey(arrays, "mass")
         atom_data[:mass] = arrays["mass"]u"u"
     else
-        atom_data[:mass] = [element(num).atomic_mass for num in Z]
+        atomic_mass = Dict(num => element(num).atomic_mass for num in unique(Z))
+        atom_data[:mass] = [atomic_mass[num] for num in Z]
     end
     if haskey(arrays, "velocities")
-        atom_data[:velocity] = collect(eachcol(arrays["velocities"])) * uVelocity
+        atom_data[:velocity] = _as_svectors(arrays["velocities"]) * uVelocity
     else
-        atom_data[:velocity] = [zeros(3) * uVelocity for _ in Z]
+        atom_data[:velocity] = fill(zero(SVector{D, Float64}) * uVelocity, length(Z))
     end
 
     for key in keys(arrays)
@@ -141,7 +155,7 @@ function Atoms(dict::Dict{String, Any})
         elseif key in ("charge", )  # Add charge unit
             atom_data[Symbol(key)] = arrays[key] * u"e_au"
         elseif typeof(arrays[key]) <: AbstractMatrix
-            atom_data[Symbol(key)] = [ collect(col) for col in eachcol(arrays[key]) ]
+            atom_data[Symbol(key)] = _as_svectors(arrays[key])
         else
             atom_data[Symbol(key)] = arrays[key]
         end
@@ -181,23 +195,34 @@ function write_dict(atoms::Atoms)
     arrays = Dict{String,Any}()
 
     arrays["Z"] = atoms.atom_data.atomic_number
-    arrays["species"] = [element(Z).symbol for Z in arrays["Z"]]
-    if atoms.atom_data.atomic_symbol != [Symbol(element(Z).symbol) for Z in arrays["Z"]]
+    # cache PeriodicTable lookups over the unique atomic numbers only
+    elem = Dict(Z => element(Z) for Z in unique(arrays["Z"]))
+    arrays["species"] = [elem[Z].symbol for Z in arrays["Z"]]
+    if atoms.atom_data.atomic_symbol != [Symbol(elem[Z].symbol) for Z in arrays["Z"]]
         @warn("Mismatch between atomic numbers and atomic symbols, which is not supported " *
               "in ExtXYZ. Atomic numbers take preference.")
     end
-    if atoms.atom_data.mass != [element(Z).atomic_mass for Z in arrays["Z"]]
+    if atoms.atom_data.mass != [elem[Z].atomic_mass for Z in arrays["Z"]]
         arrays["mass"] = ustrip.(u"u", atoms.atom_data.mass)
     end
 
-    arrays["velocities"] = zeros(D, length(atoms))
+    # fill typed locals component-wise with scalar ustrip: going through the
+    # Dict{String,Any} (or a per-atom ustrip broadcast) costs a dynamic lookup
+    # or a temporary allocation for every atom
+    velocities = zeros(D, length(atoms))
     for (i, velocity) in enumerate(atoms.atom_data.velocity)
-        arrays["velocities"][:, i] = ustrip.(uVelocity, velocity)
+        for d in 1:D
+            velocities[d, i] = ustrip(uVelocity, velocity[d])
+        end
     end
-    arrays["pos"] = zeros(D, length(atoms))
+    arrays["velocities"] = velocities
+    pos = zeros(D, length(atoms))
     for (i, position) in enumerate(atoms.atom_data.position)
-        arrays["pos"][:, i] = ustrip.(u"Å", position)
+        for d in 1:D
+            pos[d, i] = ustrip(u"Å", position[d])
+        end
     end
+    arrays["pos"] = pos
 
     for (k, v) in pairs(atoms.atom_data)
         k in (:mass, :atomic_mass, :atomic_symbol, :atomic_number, :position, 
