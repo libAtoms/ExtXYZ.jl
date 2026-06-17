@@ -268,7 +268,7 @@ end
 # by a return value rather than an EOFError because every file read ends with
 # one EOF attempt, and a Julia throw/catch costs tens of microseconds - the
 # dominant cost for small single-frame files.
-function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_regex=false)
+function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_regex=false, use_cleri=true)
     nat = Ref{Cint}(0)
     info = Ref{Ptr{DictEntry}}()
     arrays = Ref{Ptr{DictEntry}}()
@@ -278,8 +278,8 @@ function read_frame_dicts(fp::Ptr{Cvoid}; verbose=false, comment=nothing, use_re
     error_message = zeros(UInt8, 1024)
     try
         res =  ccall((:extxyz_read_ll_opts, libextxyz),
-                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}, Cstring, Ptr{UInt8}, Cint),
-                      _kv_grammar[], fp, nat, info, arrays, comment, error_message, use_regex ? 0 : 1)
+                      Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ref{Cint}, Ptr{Ptr{DictEntry}}, Ptr{Ptr{DictEntry}}, Cstring, Ptr{UInt8}, Cint, Cint),
+                      _kv_grammar[], fp, nat, info, arrays, comment, error_message, use_regex ? 0 : 1, use_cleri ? 1 : 0)
         if res != 1
             # on failure the C library frees the partial dicts itself, so the
             # finally block below must not free them again
@@ -330,7 +330,7 @@ function extract_lattice!(result_dict)
 end
 
 """
-    read_frame(file; use_regex=false)
+    read_frame(file; use_regex=false, use_cleri=true)
 
 Read a single frame from the ExtXYZ file `file`, which can be a file pointer,
 an open IO stream, a string filename or an IOBuffer.
@@ -340,13 +340,18 @@ Keyword arguments:
   whitespace tokenizer that validates each field. If `true`, the stricter but
   slower PCRE2 regular-expression parser is used instead; it is marginally
   more rigid about numeric formats.
+- `use_cleri`: if `true` (default), the comment (key/value) line is parsed with
+  the libcleri grammar. If `false`, a faster first-char-dispatch parser is used
+  instead; it is bit-identical to the grammar on valid input and validates each
+  token with the same patterns, and is most worthwhile for many small frames
+  where comment-line parsing dominates.
 
 Malformed input raises an `ErrorException` containing the parser's message.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
-function read_frame(fp::Ptr{Cvoid}; verbose::Bool=false, use_regex::Bool=false)
-    ret = read_frame_dicts(fp; verbose=verbose, use_regex=use_regex)
+function read_frame(fp::Ptr{Cvoid}; verbose::Bool=false, use_regex::Bool=false, use_cleri::Bool=true)
+    ret = read_frame_dicts(fp; verbose=verbose, use_regex=use_regex, use_cleri=use_cleri)
     ret === nothing && return nothing  # end of file
     nat, info, arrays = ret
 
@@ -379,7 +384,7 @@ read_frame(file::Union{String,IOStream,IOBuffer}; kwargs...) = read_frame(file, 
 
 Return a Channel for reading from an ExtXYZ file. Frames are yielded one by one.
 `range` can be a single integer, range object or integer array of frame indices.
-See [`read_frame`](@ref) for the meaning of `use_regex`.
+See [`read_frame`](@ref) for the meaning of `use_regex` and `use_cleri`.
 
 Example usage:
 
@@ -418,12 +423,12 @@ iread_frames(file::Union{String,IOStream,IOBuffer}, index::Int; kwargs...) = ire
 iread_frames(file::Union{String,IOStream,IOBuffer}; kwargs...) = iread_frames(file, Iterators.countfrom(1); kwargs...)
 
 """
-    read_frames(file[, range]; use_regex=false)
+    read_frames(file[, range]; use_regex=false, use_cleri=true)
 
 Read a sequence of frames from the ExtXYZ `file`, which can be specified by a file pointer, filename, IOStream or IOBuffer.
 
 `range` can be a single integer, range object or integer array of frame indices.
-See [`read_frame`](@ref) for the meaning of `use_regex`.
+See [`read_frame`](@ref) for the meaning of `use_regex` and `use_cleri`.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
@@ -431,24 +436,24 @@ Reading from IOBuffers is currently not supported on Windows.
 # switch per frame (~25% on trajectories of small frames) and buys nothing
 # when the result is materialised anyway. Keywords are explicit and typed:
 # a kwargs... splat through these layers costs a dynamic dispatch per frame.
-function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool=false)
+function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool=false, use_cleri::Bool=true)
     frames = Dict{String,Any}[]
     for _ in 1:first(range)-1
-        atoms = read_frame(fp; verbose=verbose, use_regex=use_regex)
+        atoms = read_frame(fp; verbose=verbose, use_regex=use_regex, use_cleri=use_cleri)
         atoms === nothing && return frames
     end
     for _ in range
-        atoms = read_frame(fp; verbose=verbose, use_regex=use_regex)
+        atoms = read_frame(fp; verbose=verbose, use_regex=use_regex, use_cleri=use_cleri)
         atoms === nothing && break
         push!(frames, atoms)
     end
     return frames
 end
 
-function read_frames(file::Union{String,IOStream,IOBuffer}, range; verbose::Bool=false, use_regex::Bool=false)
+function read_frames(file::Union{String,IOStream,IOBuffer}, range; verbose::Bool=false, use_regex::Bool=false, use_cleri::Bool=true)
     cfopen(file) do fp
         fp == C_NULL && error("file $file cannot be opened for reading")
-        read_frames(fp, range; verbose=verbose, use_regex=use_regex)
+        read_frames(fp, range; verbose=verbose, use_regex=use_regex, use_cleri=use_cleri)
     end
 end
 

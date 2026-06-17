@@ -100,6 +100,28 @@ Si 0.0 0.0 0.0
             @test seq_regex == seq_token
         end
 
+        @testset "comment-line parser equivalence" begin
+            # the first-char-dispatch comment parser (use_cleri=false) must be
+            # bit-identical to the libcleri grammar over assorted info types
+            frames = [Dict{String,Any}(
+                          "N_atoms" => 2,
+                          "cell" => [5.44 0.0 0.0; 0.0 5.44 0.0; 0.0 0.0 5.44],
+                          "pbc" => [true, true, false],
+                          "info" => Dict{String,Any}("step" => i, "energy" => -1.5i,
+                                                     "label" => "frame $i", "ok" => isodd(i),
+                                                     "vec" => Float64[i, 2i, 3i]),
+                          "arrays" => Dict{String,Any}(
+                              "species" => ["Si", "O"],
+                              "pos" => [0.0 1.0; 0.0 1.0; 0.0 Float64(i)]))
+                      for i in 1:5]
+            write_frames(path("ct.xyz"), frames)
+            # all four (use_regex × use_cleri) combinations must agree
+            base = read_frames(path("ct.xyz"); use_regex=true, use_cleri=true)
+            for ur in (true, false), uc in (true, false)
+                @test read_frames(path("ct.xyz"); use_regex=ur, use_cleri=uc) == base
+            end
+        end
+
         @testset "write format strings" begin
             frame = Dict{String,Any}(
                 "N_atoms" => 1,
