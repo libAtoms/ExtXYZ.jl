@@ -432,11 +432,11 @@ See [`read_frame`](@ref) for the meaning of `use_regex` and `use_cleri`.
 
 Reading from IOBuffers is currently not supported on Windows.
 """
-# read directly rather than collecting iread_frames: the Channel costs a task
-# switch per frame (~25% on trajectories of small frames) and buys nothing
-# when the result is materialised anyway. Keywords are explicit and typed:
-# a kwargs... splat through these layers costs a dynamic dispatch per frame.
 function read_frames(fp::Ptr{Cvoid}, range; verbose::Bool=false, use_regex::Bool=false, use_cleri::Bool=true)
+    # read directly rather than collecting iread_frames: the Channel costs a task
+    # switch per frame (~25% on trajectories of small frames) and buys nothing
+    # when the result is materialised anyway. Keywords are explicit and typed:
+    # a kwargs... splat through these layers costs a dynamic dispatch per frame.
     frames = Dict{String,Any}[]
     for _ in 1:first(range)-1
         atoms = read_frame(fp; verbose=verbose, use_regex=use_regex, use_cleri=use_cleri)
